@@ -1,0 +1,41 @@
+@startuml
+actor "User" as User
+participant "Accounts" as Accounts
+participant "Tokens" as Tokens
+participant "Triggers" as Triggers
+actor "Admin" as Admin
+
+User -> Accounts: Create account (provisioned)
+activate Accounts
+Accounts -> Tokens: Generate token (activation)
+activate Tokens
+Tokens -> Triggers: Token inserted
+activate Triggers
+Triggers --> Tokens: NOTIFY
+deactivate Triggers
+deactivate Tokens
+deactivate Accounts
+
+User -> Tokens: Consume token (activation)
+activate Tokens
+Tokens -> Triggers: Token consumed
+activate Triggers
+Triggers -> Accounts: Activate account
+activate Accounts
+Accounts -> Triggers: Account status changed
+activate Triggers
+Triggers --> Accounts: Update timestamps
+deactivate Triggers
+deactivate Accounts
+deactivate Triggers
+deactivate Tokens
+
+Admin -> Accounts: Suspend account
+activate Accounts
+Accounts -> Triggers: Account status changed
+activate Triggers
+Triggers --> Accounts: Update timestamps
+deactivate Triggers
+deactivate Accounts
+
+@enduml
