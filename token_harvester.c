@@ -80,7 +80,7 @@ static void prepare_statement(PGconn *conn)
   PQclear(res);
 }
 
-static void fetch_user_actions(PGconn *conn, const char *queue_name, int seen)
+static int fetch_user_actions(PGconn *conn, const char *queue_name, int seen)
 {
   static const char *paramValues[2];
   static char limit[12];
@@ -101,14 +101,14 @@ static void fetch_user_actions(PGconn *conn, const char *queue_name, int seen)
   {
     fprintf(stderr, "[ERROR] query execution failed: %s\n", PQerrorMessage(conn));
     PQclear(res);
-    return;
+    return 0;
   }
 
   nrows = PQntuples(res);
   if (nrows == 0)
   {
     PQclear(res);
-    return;
+    return 0;
   }
 
   action_col = PQfnumber(res, "action");
@@ -150,6 +150,8 @@ static void fetch_user_actions(PGconn *conn, const char *queue_name, int seen)
   printf("\n");
   fflush(stdout);
   PQclear(res);
+
+  return nrows;
 }
 
 static void do_listen(PGconn *conn, const char *chan_name)
@@ -272,6 +274,10 @@ int main(void)
   do_listen(conn, channel_name);
   prepare_statement(conn);
 
+  // Fetch actions at startup with limit of 16 rows
+  while (fetch_user_actions(conn, queue_name, 16) == 16)
+    ; // Continue fetching until fewer than limit rows are returned
+
   fd_set active_fds, read_fds;
   FD_ZERO(&active_fds);
   int sock = PQsocket(conn);
@@ -307,6 +313,11 @@ int main(void)
     if (!PQconsumeInput(conn))
     {
       reconnect(&conn, connstr, channel_name);
+
+      // Fetch actions after reconnecting
+      while (fetch_user_actions(conn, queue_name, 16) == 16)
+        ; // Continue fetching until fewer than limit rows are returned
+
       sock = PQsocket(conn);
       FD_ZERO(&active_fds);
       FD_SET(sock, &active_fds);
