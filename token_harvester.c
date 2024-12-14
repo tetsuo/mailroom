@@ -69,6 +69,20 @@ static const char *channel_name = NULL;
 static int event_threshold = DEFAULT_EVENT_THRESHOLD;
 static int timeout_ms = DEFAULT_TIMEOUT_MS;
 
+static void prepare_statement(PGconn *conn)
+{
+  // Prepare the statement once connected (or after reconnect)
+  PGresult *res = PQprepare(conn, "fetch_actions", QUERY, 2, NULL);
+  if (PQresultStatus(res) != PGRES_COMMAND_OK)
+  {
+    fprintf(stderr, "[ERROR] failed to prepare statement: %s\n", PQerrorMessage(conn));
+    PQclear(res);
+    PQfinish(conn);
+    exit(EXIT_FAILURE);
+  }
+  PQclear(res);
+}
+
 static void fetch_user_actions(PGconn *conn, int seen)
 {
   const char *paramValues[2];
@@ -78,15 +92,16 @@ static void fetch_user_actions(PGconn *conn, int seen)
   paramValues[0] = "user_action_queue"; // $1
   paramValues[1] = limit;               // $2
 
-  PGresult *res = PQexecParams(
+  // Now we use the prepared statement
+  PGresult *res = PQexecPrepared(
       conn,
-      QUERY,
-      2,           // Number of parameters
-      NULL,        // Let the server infer parameter types
-      paramValues, // Parameter values
-      NULL,        // Use default parameter lengths
-      NULL,        // Use default binary format
-      0);          // Text mode for results
+      "fetch_actions",
+      2,
+      paramValues,
+      NULL, // lengths (not needed for text)
+      NULL, // formats (text mode)
+      0     // text results
+  );
 
   if (PQresultStatus(res) != PGRES_TUPLES_OK)
   {
@@ -107,7 +122,6 @@ static void fetch_user_actions(PGconn *conn, int seen)
       {
         if (col > 0)
           printf(",");
-
         printf("%s", PQgetvalue(res, i, col));
       }
     }
@@ -158,6 +172,8 @@ static void reconnect(PGconn **conn, const char *connstr)
     {
       fprintf(stderr, "[INFO] reconnected successfully\n");
       do_listen(*conn, channel_name);
+      // Re-prepare the statement after reconnect
+      prepare_statement(*conn);
       return;
     }
 
@@ -228,6 +244,9 @@ int main(void)
 
   // Issue the initial LISTEN
   do_listen(conn, channel_name);
+
+  // Prepare the statement here once the connection is established
+  prepare_statement(conn);
 
   fd_set fds;
   struct timeval tv;
