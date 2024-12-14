@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
+#include <limits.h>
 
 #ifdef __linux__
 #include <sys/types.h>
@@ -226,7 +227,14 @@ static int parse_env_int(const char *env_var, int default_val)
 
   char *endptr;
   long parsed = strtol(val, &endptr, 10);
-  if (endptr == val || *endptr != '\0' || parsed <= 0)
+
+  if (errno == ERANGE)
+  {
+    fprintf(stderr, "[WARN] value for %s is out of range: %s, using default: %d\n", env_var, val, default_val);
+    return default_val;
+  }
+
+  if (endptr == val || *endptr != '\0' || parsed < INT_MIN || parsed > INT_MAX)
   {
     fprintf(stderr, "[WARN] invalid value for %s: %s, using default: %d\n", env_var, val, default_val);
     return default_val;
