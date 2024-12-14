@@ -33,7 +33,7 @@ CREATE TYPE token_action AS ENUM (
 CREATE TABLE tokens (
     id          BIGSERIAL PRIMARY KEY,
     action      token_action NOT NULL,
-    secret      VARCHAR(64) DEFAULT encode(gen_random_bytes(32), 'hex') UNIQUE NOT NULL,
+    secret      BYTEA DEFAULT gen_random_bytes(32) UNIQUE NOT NULL,
     code        VARCHAR(5) DEFAULT LPAD(TO_CHAR(RANDOM() * 100000, 'FM00000'), 5, '0'),
     account     BIGINT NOT NULL,
     expires_at  INTEGER DEFAULT EXTRACT(EPOCH FROM NOW() + INTERVAL '15 minute') NOT NULL,

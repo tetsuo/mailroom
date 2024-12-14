@@ -13,6 +13,7 @@
 
 #define DEFAULT_DB_CONNSTR "host=localhost user=postgres dbname=postgres"
 #define DEFAULT_CHANNEL "token_insert"
+#define DEFAULT_QUEUE "user_action_queue"
 #define DEFAULT_EVENT_THRESHOLD 10
 #define DEFAULT_TIMEOUT_MS 5000
 
@@ -65,13 +66,9 @@ static const char *QUERY =
     "    token_data td";
 
 static volatile sig_atomic_t running = 1;
-static const char *channel_name = NULL;
-static int event_threshold = DEFAULT_EVENT_THRESHOLD;
-static int timeout_ms = DEFAULT_TIMEOUT_MS;
 
 static void prepare_statement(PGconn *conn)
 {
-  // Prepare the statement once connected (or after reconnect)
   PGresult *res = PQprepare(conn, "fetch_actions", QUERY, 2, NULL);
   if (PQresultStatus(res) != PGRES_COMMAND_OK)
   {
@@ -83,26 +80,23 @@ static void prepare_statement(PGconn *conn)
   PQclear(res);
 }
 
-static void fetch_user_actions(PGconn *conn, int seen)
+static void fetch_user_actions(PGconn *conn, const char *queue_name, int seen)
 {
-  const char *paramValues[2];
-  char limit[12];
+  static const char *paramValues[2];
+  static char limit[12];
+
+  PGresult *res = NULL;
+  int action_col, email_col, login_col, code_col, secret_col;
+  char *action, *email, *login, *code, *secret_text;
+  unsigned char *decodedSecret = NULL;
+  size_t decodedSecretLen;
+  int nrows;
+
   snprintf(limit, sizeof(limit), "%d", seen);
+  paramValues[0] = queue_name;
+  paramValues[1] = limit;
 
-  paramValues[0] = "user_action_queue"; // $1
-  paramValues[1] = limit;               // $2
-
-  // Now we use the prepared statement
-  PGresult *res = PQexecPrepared(
-      conn,
-      "fetch_actions",
-      2,
-      paramValues,
-      NULL, // lengths (not needed for text)
-      NULL, // formats (text mode)
-      0     // text results
-  );
-
+  res = PQexecPrepared(conn, "fetch_actions", 2, paramValues, NULL, NULL, 0);
   if (PQresultStatus(res) != PGRES_TUPLES_OK)
   {
     fprintf(stderr, "[ERROR] query execution failed: %s\n", PQerrorMessage(conn));
@@ -110,24 +104,50 @@ static void fetch_user_actions(PGconn *conn, int seen)
     return;
   }
 
-  int nrows = PQntuples(res);
-  if (nrows > 0)
+  nrows = PQntuples(res);
+  if (nrows == 0)
   {
-    for (int i = 0; i < nrows; i++)
-    {
-      if (i > 0)
-        printf(",");
-
-      for (int col = 0; col < PQnfields(res); col++)
-      {
-        if (col > 0)
-          printf(",");
-        printf("%s", PQgetvalue(res, i, col));
-      }
-    }
-    printf("\n");
+    PQclear(res);
+    return;
   }
 
+  action_col = PQfnumber(res, "action");
+  email_col = PQfnumber(res, "email");
+  login_col = PQfnumber(res, "login");
+  code_col = PQfnumber(res, "code");
+  secret_col = PQfnumber(res, "secret");
+
+  for (int i = 0; i < nrows; i++)
+  {
+    action = PQgetvalue(res, i, action_col);
+    email = PQgetvalue(res, i, email_col);
+    login = PQgetvalue(res, i, login_col);
+    code = PQgetvalue(res, i, code_col);
+    secret_text = PQgetvalue(res, i, secret_col);
+
+    decodedSecret = PQunescapeBytea((unsigned char *)secret_text, &decodedSecretLen);
+    if (!decodedSecret)
+    {
+      fprintf(stderr, "[ERROR] PQunescapeBytea failed for row %d\n", i);
+      continue;
+    }
+
+    if (i > 0)
+      printf(",");
+
+    printf("%s,%s,%s,", action, email, login);
+
+    for (size_t j = 0; j < decodedSecretLen; j++)
+    {
+      printf("%02x", decodedSecret[j]);
+    }
+
+    printf(",%s", code);
+
+    PQfreemem(decodedSecret);
+  }
+
+  printf("\n");
   fflush(stdout);
   PQclear(res);
 }
@@ -142,8 +162,9 @@ static void do_listen(PGconn *conn, const char *chan_name)
     exit(EXIT_FAILURE);
   }
 
-  char listen_command[256];
-  snprintf(listen_command, sizeof(listen_command), "LISTEN %s", escaped_channel);
+  size_t command_len = strlen("LISTEN ") + strlen(escaped_channel) + 1;
+  char listen_command[command_len];
+  snprintf(listen_command, command_len, "LISTEN %s", escaped_channel);
   PQfreemem(escaped_channel);
 
   PGresult *res = PQexec(conn, listen_command);
@@ -159,28 +180,27 @@ static void do_listen(PGconn *conn, const char *chan_name)
   fprintf(stderr, "[INFO] listening for notifications on channel: %s\n", chan_name);
 }
 
-static void reconnect(PGconn **conn, const char *connstr)
+static void reconnect(PGconn **conn, const char *connstr, const char *channel_name)
 {
   fprintf(stderr, "[WARN] reconnecting to database...\n");
   PQfinish(*conn);
 
-  int max_attempts = 3;
-  for (int attempt = 0; attempt < max_attempts; attempt++)
+  for (int attempt = 1; attempt <= 3; attempt++)
   {
     *conn = PQconnectdb(connstr);
     if (PQstatus(*conn) == CONNECTION_OK)
     {
       fprintf(stderr, "[INFO] reconnected successfully\n");
       do_listen(*conn, channel_name);
-      // Re-prepare the statement after reconnect
       prepare_statement(*conn);
       return;
     }
 
-    fprintf(stderr, "[ERROR] failed to reconnect (attempt %d/%d): %s\n",
-            attempt + 1, max_attempts, PQerrorMessage(*conn));
+    fprintf(stderr, "[ERROR] failed to reconnect (attempt %d/3): %s\n", attempt, PQerrorMessage(*conn));
     PQfinish(*conn);
-    sleep(3);
+
+    if (attempt < 3)
+      sleep(3);
   }
 
   fprintf(stderr, "[ERROR] all reconnect attempts failed\n");
@@ -225,15 +245,22 @@ int main(void)
     fprintf(stderr, "[WARN] environment variable DB_CONNSTR not set. default: %s\n", connstr);
   }
 
-  channel_name = getenv("CHANNEL_NAME");
+  const char *channel_name = getenv("CHANNEL_NAME");
   if (!channel_name)
   {
     channel_name = DEFAULT_CHANNEL;
     fprintf(stderr, "[WARN] environment variable CHANNEL_NAME not set. default: %s\n", channel_name);
   }
 
-  event_threshold = parse_env_int("EVENT_THRESHOLD", DEFAULT_EVENT_THRESHOLD);
-  timeout_ms = parse_env_int("TIMEOUT_MS", DEFAULT_TIMEOUT_MS);
+  const char *queue_name = getenv("QUEUE_NAME");
+  if (!queue_name)
+  {
+    queue_name = DEFAULT_QUEUE;
+    fprintf(stderr, "[WARN] environment variable QUEUE_NAME not set. default: %s\n", queue_name);
+  }
+
+  int event_threshold = parse_env_int("EVENT_THRESHOLD", DEFAULT_EVENT_THRESHOLD);
+  int timeout_ms = parse_env_int("TIMEOUT_MS", DEFAULT_TIMEOUT_MS);
 
   PGconn *conn = PQconnectdb(connstr);
   if (PQstatus(conn) != CONNECTION_OK)
@@ -242,25 +269,24 @@ int main(void)
     return EXIT_FAILURE;
   }
 
-  // Issue the initial LISTEN
   do_listen(conn, channel_name);
-
-  // Prepare the statement here once the connection is established
   prepare_statement(conn);
 
-  fd_set fds;
+  fd_set active_fds, read_fds;
+  FD_ZERO(&active_fds);
+  int sock = PQsocket(conn);
+  FD_SET(sock, &active_fds);
+
   struct timeval tv;
   int seen = 0;
 
-  // Main event loop
   while (running)
   {
-    FD_ZERO(&fds);
-    FD_SET(PQsocket(conn), &fds);
+    read_fds = active_fds; // Copy the active fd_set
     tv.tv_sec = timeout_ms / 1000;
     tv.tv_usec = (timeout_ms % 1000) * 1000;
 
-    int rc = select(PQsocket(conn) + 1, &fds, NULL, NULL, &tv);
+    int rc = select(sock + 1, &read_fds, NULL, NULL, &tv);
     if (rc < 0)
     {
       fprintf(stderr, "[ERROR] select failed: %s\n", strerror(errno));
@@ -272,7 +298,7 @@ int main(void)
       // Timeout occurred
       if (seen > 0)
       {
-        fetch_user_actions(conn, seen);
+        fetch_user_actions(conn, queue_name, seen);
         seen = 0; // Reset count
       }
       continue;
@@ -280,8 +306,10 @@ int main(void)
 
     if (!PQconsumeInput(conn))
     {
-      fprintf(stderr, "[ERROR] connection error: %s\n", PQerrorMessage(conn));
-      reconnect(&conn, connstr);
+      reconnect(&conn, connstr, channel_name);
+      sock = PQsocket(conn);
+      FD_ZERO(&active_fds);
+      FD_SET(sock, &active_fds);
       continue;
     }
 
@@ -294,7 +322,7 @@ int main(void)
       // Fetch actions immediately if threshold is reached
       if (seen >= event_threshold)
       {
-        fetch_user_actions(conn, seen);
+        fetch_user_actions(conn, queue_name, seen);
         seen = 0; // Reset
       }
     }
