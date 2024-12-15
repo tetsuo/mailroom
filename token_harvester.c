@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <libpq-fe.h>
 #include <errno.h>
@@ -17,6 +18,10 @@
 #define DEFAULT_QUEUE "user_action_queue"
 #define DEFAULT_EVENT_THRESHOLD 10
 #define DEFAULT_TIMEOUT_MS 5000
+
+#define PREPARED_STMT "fetch_actions"
+#define RECONNECT_ATTEMPTS 3
+#define RECONNECT_INTERVAL_SECONDS 3
 
 static const char *QUERY =
     "WITH token_data AS ( "
@@ -68,23 +73,28 @@ static const char *QUERY =
 
 static volatile sig_atomic_t running = 1;
 
-static void prepare_statement(PGconn *conn)
+static const char *queue_name = NULL;
+static const char *channel_name = NULL;
+static const char *connstr = NULL;
+
+static bool prepare_statement(PGconn *conn)
 {
-  PGresult *res = PQprepare(conn, "fetch_actions", QUERY, 2, NULL);
+  PGresult *res = PQprepare(conn, PREPARED_STMT, QUERY, 2, NULL);
   if (PQresultStatus(res) != PGRES_COMMAND_OK)
   {
     fprintf(stderr, "[ERROR] failed to prepare statement: %s\n", PQerrorMessage(conn));
     PQclear(res);
     PQfinish(conn);
-    exit(EXIT_FAILURE);
+    return false;
   }
   PQclear(res);
+  return true;
 }
 
-static int fetch_user_actions(PGconn *conn, const char *queue_name, int seen)
+static int fetch_user_actions(PGconn *conn, int seen)
 {
-  static const char *paramValues[2];
-  static char limit[12];
+  const char *paramValues[2];
+  char limit[12];
 
   PGresult *res = NULL;
   int action_col, email_col, login_col, code_col, secret_col;
@@ -97,7 +107,7 @@ static int fetch_user_actions(PGconn *conn, const char *queue_name, int seen)
   paramValues[0] = queue_name;
   paramValues[1] = limit;
 
-  res = PQexecPrepared(conn, "fetch_actions", 2, paramValues, NULL, NULL, 0);
+  res = PQexecPrepared(conn, PREPARED_STMT, 2, paramValues, NULL, NULL, 0);
   if (PQresultStatus(res) != PGRES_TUPLES_OK)
   {
     fprintf(stderr, "[ERROR] query execution failed: %s\n", PQerrorMessage(conn));
@@ -163,14 +173,14 @@ static int fetch_user_actions(PGconn *conn, const char *queue_name, int seen)
   return nrows;
 }
 
-static void do_listen(PGconn *conn, const char *chan_name)
+static int do_listen(PGconn *conn)
 {
-  char *escaped_channel = PQescapeIdentifier(conn, chan_name, strlen(chan_name));
+  char *escaped_channel = PQescapeIdentifier(conn, channel_name, strlen(channel_name));
   if (!escaped_channel)
   {
     fprintf(stderr, "[ERROR] failed to escape channel name: %s\n", PQerrorMessage(conn));
     PQfinish(conn);
-    exit(EXIT_FAILURE);
+    return -2;
   }
 
   size_t command_len = strlen("LISTEN ") + strlen(escaped_channel) + 1;
@@ -184,14 +194,16 @@ static void do_listen(PGconn *conn, const char *chan_name)
     fprintf(stderr, "[ERROR] failed to listen for notifications: %s\n", PQerrorMessage(conn));
     PQclear(res);
     PQfinish(conn);
-    exit(EXIT_FAILURE);
+    return -1;
   }
   PQclear(res);
 
-  fprintf(stderr, "[INFO] listening for notifications on channel: %s\n", chan_name);
+  fprintf(stderr, "[INFO] listening for notifications on channel: %s\n", channel_name);
+
+  return 0;
 }
 
-static void reconnect(PGconn **conn, const char *connstr, const char *channel_name)
+static bool reconnect(PGconn **conn)
 {
   fprintf(stderr, "[WARN] reconnecting to database...\n");
   PQfinish(*conn);
@@ -202,20 +214,23 @@ static void reconnect(PGconn **conn, const char *connstr, const char *channel_na
     if (PQstatus(*conn) == CONNECTION_OK)
     {
       fprintf(stderr, "[INFO] reconnected successfully\n");
-      do_listen(*conn, channel_name);
-      prepare_statement(*conn);
-      return;
+      if (do_listen(*conn) < 0)
+      {
+        return false;
+      }
+      return prepare_statement(*conn);
     }
 
-    fprintf(stderr, "[ERROR] failed to reconnect (attempt %d/3): %s\n", attempt, PQerrorMessage(*conn));
+    fprintf(stderr, "[ERROR] failed to reconnect (attempt %d/%d): %s\n", attempt, RECONNECT_ATTEMPTS, PQerrorMessage(*conn));
     PQfinish(*conn);
 
-    if (attempt < 3)
-      sleep(3);
+    if (attempt < RECONNECT_ATTEMPTS)
+      sleep(RECONNECT_INTERVAL_SECONDS);
   }
 
   fprintf(stderr, "[ERROR] all reconnect attempts failed\n");
-  exit(EXIT_FAILURE);
+
+  return false;
 }
 
 static void signal_handler(int sig)
@@ -234,6 +249,9 @@ static int parse_env_int(const char *env_var, int default_val)
   }
 
   char *endptr;
+
+  errno = 0;
+
   long parsed = strtol(val, &endptr, 10);
 
   if (errno == ERANGE)
@@ -256,21 +274,21 @@ int main(void)
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
 
-  const char *connstr = getenv("DB_CONNSTR");
+  connstr = getenv("DB_CONNSTR");
   if (!connstr)
   {
     connstr = DEFAULT_DB_CONNSTR;
     fprintf(stderr, "[WARN] environment variable DB_CONNSTR not set. default: %s\n", connstr);
   }
 
-  const char *channel_name = getenv("CHANNEL_NAME");
+  channel_name = getenv("CHANNEL_NAME");
   if (!channel_name)
   {
     channel_name = DEFAULT_CHANNEL;
     fprintf(stderr, "[WARN] environment variable CHANNEL_NAME not set. default: %s\n", channel_name);
   }
 
-  const char *queue_name = getenv("QUEUE_NAME");
+  queue_name = getenv("QUEUE_NAME");
   if (!queue_name)
   {
     queue_name = DEFAULT_QUEUE;
@@ -287,11 +305,18 @@ int main(void)
     return EXIT_FAILURE;
   }
 
-  do_listen(conn, channel_name);
-  prepare_statement(conn);
+  if (do_listen(conn) < 0)
+  {
+    return EXIT_FAILURE;
+  }
+
+  if (!prepare_statement(conn))
+  {
+    return EXIT_FAILURE;
+  }
 
   // Fetch actions at startup with limit of 16 rows
-  while (fetch_user_actions(conn, queue_name, 16) == 16)
+  while (fetch_user_actions(conn, 16) == 16)
     ; // Continue fetching until fewer than limit rows are returned
 
   fd_set active_fds, read_fds;
@@ -302,13 +327,16 @@ int main(void)
   struct timeval tv;
   int seen = 0;
 
+  PGnotify *notify = NULL;
+  int rc = 0;
+
   while (running)
   {
     read_fds = active_fds; // Copy the active fd_set
     tv.tv_sec = timeout_ms / 1000;
     tv.tv_usec = (timeout_ms % 1000) * 1000;
 
-    int rc = select(sock + 1, &read_fds, NULL, NULL, &tv);
+    rc = select(sock + 1, &read_fds, NULL, NULL, &tv);
     if (rc < 0)
     {
       fprintf(stderr, "[ERROR] select failed: %s\n", strerror(errno));
@@ -320,7 +348,7 @@ int main(void)
       // Timeout occurred
       if (seen > 0)
       {
-        fetch_user_actions(conn, queue_name, seen);
+        fetch_user_actions(conn, seen);
         seen = 0; // Reset count
       }
       continue;
@@ -328,10 +356,13 @@ int main(void)
 
     if (!PQconsumeInput(conn))
     {
-      reconnect(&conn, connstr, channel_name);
+      if (!reconnect(&conn))
+      {
+        return EXIT_FAILURE;
+      }
 
       // Fetch actions after reconnecting
-      while (fetch_user_actions(conn, queue_name, 16) == 16)
+      while (fetch_user_actions(conn, 16) == 16)
         ; // Continue fetching until fewer than limit rows are returned
 
       sock = PQsocket(conn);
@@ -340,7 +371,6 @@ int main(void)
       continue;
     }
 
-    PGnotify *notify;
     while ((notify = PQnotifies(conn)) != NULL)
     {
       seen++;
@@ -349,7 +379,7 @@ int main(void)
       // Fetch actions immediately if threshold is reached
       if (seen >= event_threshold)
       {
-        fetch_user_actions(conn, queue_name, seen);
+        fetch_user_actions(conn, seen);
         seen = 0; // Reset
       }
     }
