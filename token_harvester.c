@@ -102,7 +102,7 @@ static int fetch_user_actions(PGconn *conn, const char *queue_name, int seen)
   {
     fprintf(stderr, "[ERROR] query execution failed: %s\n", PQerrorMessage(conn));
     PQclear(res);
-    return 0;
+    return -1;
   }
 
   nrows = PQntuples(res);
@@ -117,6 +117,14 @@ static int fetch_user_actions(PGconn *conn, const char *queue_name, int seen)
   login_col = PQfnumber(res, "login");
   code_col = PQfnumber(res, "code");
   secret_col = PQfnumber(res, "secret");
+
+  if (action_col == -1 || email_col == -1 || login_col == -1 ||
+      code_col == -1 || secret_col == -1)
+  {
+    fprintf(stderr, "[ERROR] missing columns in the result set\n");
+    PQclear(res);
+    return -2;
+  }
 
   for (int i = 0; i < nrows; i++)
   {
