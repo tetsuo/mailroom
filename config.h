@@ -15,10 +15,10 @@
 #define RECONNECT_INTERVAL_SECONDS 3
 
 #define HMAC_KEY_SIZE 32
-#define SIGNATURE_INPUT_SIZE 46
+#define SIGNATURE_MAX_INPUT_SIZE 56
 #define HMAC_RESULT_SIZE 32
-#define CONCATENATED_SIZE 64
-#define BASE64_ENCODED_SIZE 89
+#define CONCATENATED_SIZE 74
+#define BASE64_ENCODED_SIZE 101
 
 // Variables defined in main.c
 extern const char *queue_name;
