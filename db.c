@@ -133,7 +133,7 @@ int fetch_user_actions(PGconn *conn, int seen)
   size_t secret_len;
   int nrows;
 
-  char signature_buffer[SIGNATURE_INPUT_SIZE];      // Input to sign
+  char signature_buffer[SIGNATURE_MAX_INPUT_SIZE];  // Input to sign
   unsigned char hmac_result[HMAC_RESULT_SIZE];      // HMAC output
   unsigned char combined_buffer[CONCATENATED_SIZE]; // secret + HMAC
   char base64_encoded[BASE64_ENCODED_SIZE];         // Base64-encoded output
@@ -192,10 +192,10 @@ int fetch_user_actions(PGconn *conn, int seen)
 
     printf("%s,%s,%s,", action, email, login);
 
-    signature_len = construct_signature_data(signature_buffer, action, secret, secret_len, code);
+    signature_len = construct_signature_data(signature_buffer, action, secret, code);
 
     hmac_len = HMAC_RESULT_SIZE;
-    if (!hmac_sign(signature_buffer, hmac_result, &hmac_len))
+    if (!hmac_sign(signature_buffer, signature_len, hmac_result, &hmac_len))
     {
       fprintf(stderr, "[ERROR] HMAC signing failed\n");
       PQfreemem(secret);

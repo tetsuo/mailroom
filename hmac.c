@@ -78,12 +78,13 @@ bool hmac_init()
  * HMAC of the input data.
  *
  * @param data          Input data to be signed.
+ * @param data_len      Input data length.
  * @param hmac_result   Buffer to store the resulting HMAC.
  * @param hmac_len      Pointer to the size of the HMAC buffer; updated with the actual length.
  *
  * @return true on success, false on failure.
  */
-bool hmac_sign(const char *data, unsigned char *hmac_result, size_t *hmac_len)
+bool hmac_sign(const char *data, size_t data_len, unsigned char *hmac_result, size_t *hmac_len)
 {
   if (!hmac_ctx || !data || !hmac_result || !hmac_len)
   {
@@ -99,7 +100,7 @@ bool hmac_sign(const char *data, unsigned char *hmac_result, size_t *hmac_len)
     return false;
   }
 
-  if (EVP_MAC_update(hmac_ctx->ctx, (const unsigned char *)data, strlen(data)) != 1)
+  if (EVP_MAC_update(hmac_ctx->ctx, (const unsigned char *)data, data_len) != 1)
   {
     fprintf(stderr, "[ERROR] failed to update HMAC context with data\n");
     ERR_print_errors_fp(stderr);
