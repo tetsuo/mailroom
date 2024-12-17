@@ -1,32 +1,31 @@
-FROM debian:bullseye-slim AS builder
+FROM alpine:latest AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
+RUN apk add --no-cache \
+    build-base \
     clang \
-    libpq-dev \
+    postgresql-dev \
+    openssl-dev \
     make \
-    && rm -rf /var/lib/apt/lists/*
+    && addgroup -g 666 builder \
+    && adduser -u 666 -G builder -h /home/builder -D builder
 
-RUN groupadd --gid 666 builder && useradd --uid 666 --gid 666 --shell /bin/bash --create-home builder
 USER builder
 WORKDIR /build
 
-COPY --chown=builder:builder token_harvester.c /build
-COPY --chown=builder:builder Makefile /build
+COPY --chown=builder:builder main.c db.c hmac.c base64.c config.h db.h hmac.h base64.h Makefile /build/
 
-RUN make
+RUN make release
 
-FROM debian:bullseye-slim
+FROM alpine:latest
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apk add --no-cache \
     bash \
     ca-certificates \
-    libpq5 \
-    awscli \
+    postgresql-libs \
+    aws-cli \
     jq \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN groupadd --gid 666 runner && useradd --uid 666 --gid 666 --shell /bin/bash --create-home runner
+    && addgroup -g 666 runner \
+    && adduser -u 666 -G runner -h /home/runner -D runner
 
 RUN mkdir -p /app/data && chown -R runner:runner /app
 VOLUME /app
