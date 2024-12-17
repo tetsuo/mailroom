@@ -52,8 +52,7 @@ static const char *QUERY =
     "    td.email, "
     "    td.login, "
     "    td.secret, "
-    "    td.code, "
-    "    td.expires_at "
+    "    td.code "
     "FROM "
     "    token_data td";
 
@@ -89,8 +88,7 @@ bool prepare_statement(PGconn *conn)
  * @return             Total length of the constructed signature data.
  */
 static size_t construct_signature_data(char *output, const char *action,
-                                       const unsigned char *secret, const char *code,
-                                       const char *expires_at)
+                                       const unsigned char *secret, const char *code)
 {
   size_t offset = 0;
 
@@ -98,8 +96,6 @@ static size_t construct_signature_data(char *output, const char *action,
   {
     memcpy(output, "/activate", 9); // "/activate" is 9 bytes
     offset = 9;
-    memcpy(output + offset, expires_at, 10); // timestamp is 10 digits until 20 Nov 2286 17:46:40 UTC
-    offset += 10;
     memcpy(output + offset, secret, 32);
     offset += 32;
   }
@@ -107,8 +103,6 @@ static size_t construct_signature_data(char *output, const char *action,
   {
     memcpy(output, "/recover", 8); // "/recover" is 8 bytes
     offset = 8;
-    memcpy(output + offset, expires_at, 10);
-    offset += 10;
     memcpy(output + offset, secret, 32);
     offset += 32;
     memcpy(output + offset, code, 5); // "code" is 5 bytes
@@ -132,15 +126,15 @@ int fetch_user_actions(PGconn *conn, int seen)
   static char limit[12];
 
   PGresult *res = NULL;
-  int action_col, email_col, login_col, code_col, secret_col, expires_at_col;
-  char *action, *email, *login, *code, *secret_text, *expires_at_text;
+  int action_col, email_col, login_col, code_col, secret_col;
+  char *action, *email, *login, *code, *secret_text;
   unsigned char *secret = NULL;
   size_t secret_len;
   int nrows;
 
   char signature_buffer[SIGNATURE_MAX_INPUT_SIZE];  // Input to sign
   unsigned char hmac_result[HMAC_RESULT_SIZE];      // HMAC output
-  unsigned char combined_buffer[CONCATENATED_SIZE]; // secret + expires_at + HMAC
+  unsigned char combined_buffer[CONCATENATED_SIZE]; // secret + HMAC
   char base64_encoded[BASE64_ENCODED_SIZE];         // Base64-encoded output
 
   size_t hmac_len = 0;
@@ -169,7 +163,6 @@ int fetch_user_actions(PGconn *conn, int seen)
   login_col = PQfnumber(res, "login");
   code_col = PQfnumber(res, "code");
   secret_col = PQfnumber(res, "secret");
-  expires_at_col = PQfnumber(res, "expires_at");
 
   if (action_col == -1 || email_col == -1 || login_col == -1 ||
       code_col == -1 || secret_col == -1)
@@ -188,7 +181,6 @@ int fetch_user_actions(PGconn *conn, int seen)
     login = PQgetvalue(res, i, login_col);
     code = PQgetvalue(res, i, code_col);
     secret_text = PQgetvalue(res, i, secret_col);
-    expires_at_text = PQgetvalue(res, i, expires_at_col);
 
     secret = PQunescapeBytea((unsigned char *)secret_text, &secret_len);
     if (!secret || secret_len != 32)
@@ -199,7 +191,7 @@ int fetch_user_actions(PGconn *conn, int seen)
 
     printf("%s,%s,%s,", action, email, login);
 
-    signature_len = construct_signature_data(signature_buffer, action, secret, code, expires_at_text);
+    signature_len = construct_signature_data(signature_buffer, action, secret, code);
 
     hmac_len = HMAC_RESULT_SIZE;
     if (!hmac_sign(signature_buffer, signature_len, hmac_result, &hmac_len))
@@ -210,10 +202,9 @@ int fetch_user_actions(PGconn *conn, int seen)
     }
 
     memcpy(combined_buffer, secret, 32);
-    memcpy(combined_buffer + 32, expires_at_text, 10);
-    memcpy(combined_buffer + 32 + 10, hmac_result, hmac_len);
+    memcpy(combined_buffer + 32, hmac_result, hmac_len);
 
-    if (!base64_urlencode(base64_encoded, sizeof(base64_encoded), combined_buffer, 32 + 10 + hmac_len))
+    if (!base64_urlencode(base64_encoded, sizeof(base64_encoded), combined_buffer, 32 + hmac_len))
     {
       fprintf(stderr, "[ERROR] base64_urlencode failed\n");
       PQfreemem(secret);
