@@ -190,8 +190,8 @@ int main(void)
     return EXIT_FAILURE;
   }
 
-  // Fetch actions at startup with limit of 16 rows
-  while (fetch_user_actions(conn, 16) == 16)
+  // Fetch actions at startup with limit of event_threshold rows
+  while (fetch_user_actions(conn, event_threshold) == event_threshold)
     ; // Continue fetching until fewer than limit rows are returned
 
   fd_set active_fds, read_fds;
@@ -238,7 +238,7 @@ int main(void)
       }
 
       // Fetch actions after reconnecting
-      while (fetch_user_actions(conn, 16) == 16)
+      while (fetch_user_actions(conn, event_threshold) == event_threshold)
         ;
 
       sock = PQsocket(conn);
