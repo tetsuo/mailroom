@@ -2,40 +2,46 @@ CC = clang
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S), Darwin)
-    INCLUDES = -I$(shell pg_config --includedir)
-    LDFLAGS = -L$(shell pg_config --libdir)
+    INCLUDES = -I$(shell pg_config --includedir) -I/usr/local/include
+    LDFLAGS = -L$(shell pg_config --libdir) -L/usr/local/lib
+    LDLIBS = -lpq -lssl -lcrypto
 else ifeq ($(UNAME_S), Linux)
     DEPLOYMENT_TARGET =
-    INCLUDES = -I/usr/include/postgresql
-    LDFLAGS = -L/usr/lib
+    INCLUDES = -I/usr/include/postgresql -I/usr/include/openssl
+    LDFLAGS = -L/usr/lib -L/usr/lib/x86_64-linux-gnu
+    LDLIBS = -lpq -lssl -lcrypto
 endif
 
-LDLIBS = -lpq
+CFLAGS_RELEASE = -Wall -Wextra -pedantic -std=c99 -O2 -DNDEBUG \
+                 -march=native -mtune=native -fomit-frame-pointer \
+                 -ffast-math -flto -fvisibility=hidden -fstrict-aliasing \
+                 -fno-plt -fstack-protector-strong $(INCLUDES)
 
-CFLAGS_RELEASE = -Wall -Wextra -pedantic -std=c11 -O3 -DNDEBUG -fomit-frame-pointer -ffast-math $(INCLUDES)
+CFLAGS_DEBUG = -Wall -Wextra -pedantic -std=c99 -g -O0 -DDEBUG -fno-omit-frame-pointer $(INCLUDES)
 
-CFLAGS_DEBUG = -Wall -Wextra -pedantic -std=c11 -g -O0 -DDEBUG -fsanitize=address,undefined -fno-omit-frame-pointer $(INCLUDES)
+SOURCES = main.c db.c hmac.c base64.c
+OBJECTS = $(SOURCES:.c=.o)
+TARGET = token_harvester
 
 all: release
 
-# Release build
 release: CFLAGS = $(CFLAGS_RELEASE)
-release: token_harvester
+release: $(TARGET)
+	strip $(TARGET)
 
-# Debug build
 debug: CFLAGS = $(CFLAGS_DEBUG)
-debug: token_harvester
+debug: $(TARGET)
 
-token_harvester: token_harvester.o
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ token_harvester.o $(LDLIBS)
+$(TARGET): $(OBJECTS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJECTS) $(LDLIBS)
 
-token_harvester.o: token_harvester.c
-	$(CC) $(CFLAGS) -c token_harvester.c
+%.o: %.c
+	$(CC) $(CFLAGS) -c $<
 
 dep:
-	$(CC) -MM $(CFLAGS_DEBUG) *.c > dependencies.mk
+	$(CC) -MM $(CFLAGS_DEBUG) $(SOURCES) > dependencies.mk
 
 -include dependencies.mk
 
 clean:
-	rm -f token_harvester *.o dependencies.mk
+	rm -f $(TARGET) *.o dependencies.mk
