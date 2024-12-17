@@ -12,7 +12,8 @@ RUN apk add --no-cache \
 USER builder
 WORKDIR /build
 
-COPY --chown=builder:builder main.c db.c hmac.c base64.c config.h db.h hmac.h base64.h Makefile /build/
+COPY --chown=builder:builder src/main.c src/db.c src/hmac.c src/base64.c src/config.h src/db.h src/hmac.h src/base64.h /build/src/
+COPY Makefile /build/
 
 RUN make release
 

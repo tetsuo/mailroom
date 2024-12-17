@@ -19,7 +19,7 @@ CFLAGS_RELEASE = -Wall -Wextra -pedantic -std=c99 -O2 -DNDEBUG \
 
 CFLAGS_DEBUG = -Wall -Wextra -pedantic -std=c99 -g -O0 -DDEBUG -fno-omit-frame-pointer $(INCLUDES)
 
-SOURCES = main.c db.c hmac.c base64.c
+SOURCES = src/main.c src/db.c src/hmac.c src/base64.c
 OBJECTS = $(SOURCES:.c=.o)
 TARGET = token_harvester
 
@@ -36,7 +36,7 @@ $(TARGET): $(OBJECTS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJECTS) $(LDLIBS)
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c $<
+	$(CC) $(CFLAGS) -c $< -o $@
 
 dep:
 	$(CC) -MM $(CFLAGS_DEBUG) $(SOURCES) > dependencies.mk
@@ -44,4 +44,4 @@ dep:
 -include dependencies.mk
 
 clean:
-	rm -f $(TARGET) *.o dependencies.mk
+	rm -f $(TARGET) $(OBJECTS) dependencies.mk
