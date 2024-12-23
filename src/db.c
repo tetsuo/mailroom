@@ -75,7 +75,6 @@ bool prepare_statement(PGconn *conn)
   {
     fprintf(stderr, "[ERROR] failed to prepare statement: %s\n", PQerrorMessage(conn));
     PQclear(res);
-    PQfinish(conn);
     return false;
   }
   PQclear(res);
@@ -239,7 +238,6 @@ int do_listen(PGconn *conn)
   if (!escaped_channel)
   {
     fprintf(stderr, "[ERROR] failed to escape channel name: %s\n", PQerrorMessage(conn));
-    PQfinish(conn);
     return -2;
   }
 
@@ -253,7 +251,6 @@ int do_listen(PGconn *conn)
   {
     fprintf(stderr, "[ERROR] failed to listen for notifications: %s\n", PQerrorMessage(conn));
     PQclear(res);
-    PQfinish(conn);
     return -1;
   }
   PQclear(res);
