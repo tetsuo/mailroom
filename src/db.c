@@ -8,6 +8,12 @@
 #include <string.h>
 #include <unistd.h>
 
+#define SIGNATURE_MAX_INPUT_SIZE 46
+#define HMAC_RESULT_SIZE 32
+#define CONCATENATED_SIZE 64
+#define BASE64_ENCODED_SIZE 89
+#define POSTGRES_PREPARED_STMT_NAME "1"
+
 static const char *QUERY =
     "WITH token_data AS ( "
     "    SELECT "
@@ -64,7 +70,7 @@ static const char *QUERY =
  */
 bool prepare_statement(PGconn *conn)
 {
-  PGresult *res = PQprepare(conn, PREPARED_STMT_NAME, QUERY, 2, NULL);
+  PGresult *res = PQprepare(conn, POSTGRES_PREPARED_STMT_NAME, QUERY, 2, NULL);
   if (PQresultStatus(res) != PGRES_COMMAND_OK)
   {
     fprintf(stderr, "[ERROR] failed to prepare statement: %s\n", PQerrorMessage(conn));
@@ -112,15 +118,7 @@ static size_t construct_signature_data(char *output, const char *action,
   return offset; // Total length of the constructed data
 }
 
-/**
- * Fetches user actions from the database using a prepared statement.
- * Processes the fetched data by constructing HMAC-signed and Base64-encoded tokens.
- *
- * @param conn   Pointer to the PostgreSQL connection.
- * @param seen   The maximum number of rows to fetch in a single execution.
- * @return       Number of rows fetched and processed, or an error code on failure.
- */
-int fetch_user_actions(PGconn *conn, int seen)
+int db_dump_csv(PGconn *conn, int seen)
 {
   static const char *params[2];
   static char limit[12];
@@ -143,7 +141,7 @@ int fetch_user_actions(PGconn *conn, int seen)
   params[0] = queue_name;
   params[1] = limit;
 
-  res = PQexecPrepared(conn, PREPARED_STMT_NAME, 2, params, NULL, NULL, 0);
+  res = PQexecPrepared(conn, POSTGRES_PREPARED_STMT_NAME, 2, params, NULL, NULL, 0);
   if (PQresultStatus(res) != PGRES_TUPLES_OK)
   {
     fprintf(stderr, "[ERROR] query execution failed: %s\n", PQerrorMessage(conn));
@@ -185,7 +183,7 @@ int fetch_user_actions(PGconn *conn, int seen)
     secret = PQunescapeBytea((unsigned char *)secret_text, &secret_len);
     if (!secret || secret_len != 32)
     {
-      fprintf(stderr, "[ERROR] PQunescapeBytea failed or invalid secret length for row %d\n", i);
+      fprintf(stderr, "[ERROR] skipping row %d; PQunescapeBytea failed or invalid secret length\n", i);
       continue;
     }
 
@@ -259,8 +257,6 @@ int do_listen(PGconn *conn)
     return -1;
   }
   PQclear(res);
-
-  fprintf(stderr, "[INFO] listening for notifications on channel: %s\n", channel_name);
 
   return 0;
 }

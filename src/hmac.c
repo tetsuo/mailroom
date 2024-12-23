@@ -58,7 +58,7 @@ bool hmac_init()
       OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST, "SHA256", 0),
       OSSL_PARAM_construct_end()};
 
-  if (EVP_MAC_init(hmac_ctx->ctx, hmac_key, hmac_key_len, params) != 1)
+  if (EVP_MAC_init(hmac_ctx->ctx, hmac_key, hmac_keylen, params) != 1)
   {
     fprintf(stderr, "[ERROR] failed to initialize HMAC context\n");
     ERR_print_errors_fp(stderr);
@@ -93,7 +93,7 @@ bool hmac_sign(const char *data, size_t data_len, unsigned char *hmac_result, si
   }
 
   // Reinitialize with the original key (no params needed, digest already set)
-  if (EVP_MAC_init(hmac_ctx->ctx, hmac_key, hmac_key_len, NULL) != 1)
+  if (EVP_MAC_init(hmac_ctx->ctx, hmac_key, hmac_keylen, NULL) != 1)
   {
     fprintf(stderr, "[ERROR] failed to reinitialize HMAC context\n");
     ERR_print_errors_fp(stderr);
@@ -150,9 +150,9 @@ void hmac_cleanup()
     hmac_ctx = NULL;
   }
 
-  if (hmac_key_len > 0)
+  if (hmac_keylen > 0)
   {
-    OPENSSL_cleanse(hmac_key, hmac_key_len);
-    hmac_key_len = 0;
+    OPENSSL_cleanse(hmac_key, hmac_keylen);
+    hmac_keylen = 0;
   }
 }

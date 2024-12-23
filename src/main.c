@@ -19,12 +19,20 @@
 #include <sys/select.h>
 #endif
 
+#define ENV_BATCH_TIMEOUT_MS 5000
+#define ENV_BATCH_LIMIT 10
+
+#define ENV_DB_CHANNEL_NAME "token_insert"
+#define ENV_DB_QUEUE_NAME "user_action_queue"
+#define ENV_DB_RECONNECT_MAX_ATTEMPTS 3
+#define ENV_DB_RECONNECT_INTERVAL_MS 3000
+
 const char *queue_name = NULL;
 const char *channel_name = NULL;
-const char *connstr = NULL;
+const char *conninfo = NULL;
 
 unsigned char hmac_key[HMAC_KEY_SIZE] = {0};
-size_t hmac_key_len = 0;
+size_t hmac_keylen = 0;
 
 static volatile sig_atomic_t running = 1;
 
