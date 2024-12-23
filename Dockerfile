@@ -40,9 +40,9 @@ RUN mkdir -p /home/runner && chown -R runner:runner /home/runner
 VOLUME /home/runner
 WORKDIR /home/runner
 
-COPY --from=builder /build/batcher /home/runner/
+COPY --from=builder /build/listener /home/runner/
 COPY --from=builder /build/worker/target/release/worker /home/runner/
 
 USER 666
 
-CMD ["/bin/sh", "-c", "/home/runner/batcher | /home/runner/worker"]
+CMD ["/bin/sh", "-c", "/home/runner/listener | /home/runner/worker"]
