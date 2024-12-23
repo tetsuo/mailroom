@@ -15,13 +15,14 @@ endif
 CFLAGS_RELEASE = -Wall -Wextra -pedantic -std=c99 -O2 -DNDEBUG \
                  -march=native -mtune=native -fomit-frame-pointer \
                  -ffast-math -flto -fvisibility=hidden -fstrict-aliasing \
-                 -fno-plt -fstack-protector-strong $(INCLUDES)
+                 -fno-plt -fstack-protector-strong $(INCLUDES) \
+                 -D_POSIX_C_SOURCE=199309L
 
 CFLAGS_DEBUG = -Wall -Wextra -pedantic -std=c99 -g -O0 -DDEBUG -fno-omit-frame-pointer $(INCLUDES)
 
-SOURCES = src/main.c src/db.c src/hmac.c src/base64.c
+SOURCES = src/main.c src/db.c src/hmac.c src/base64.c src/log.c
 OBJECTS = $(SOURCES:.c=.o)
-TARGET = token_harvester
+TARGET = pgcsvdump
 
 all: release
 
