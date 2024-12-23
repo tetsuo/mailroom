@@ -4,9 +4,7 @@
 #include <libpq-fe.h>
 #include <stdbool.h>
 
-bool prepare_statement(PGconn *conn);
-int fetch_user_actions(PGconn *conn, int seen);
-int do_listen(PGconn *conn);
-bool reconnect(PGconn **conn);
+int db_dump_csv(PGconn *conn, int seen);
+int db_connect(PGconn **conn, int attempts, int wait_sec);
 
 #endif // DB_H

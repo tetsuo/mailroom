@@ -1,3 +1,4 @@
+#include "log.h"
 #include "config.h"
 #include "db.h"
 #include "hmac.h"
@@ -12,6 +13,7 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <limits.h>
+#include <sys/time.h>
 #include <openssl/crypto.h>
 
 #ifdef __linux__
@@ -38,7 +40,7 @@ static volatile sig_atomic_t running = 1;
 
 static void signal_handler(int sig)
 {
-  fprintf(stderr, "[WARN] signal %d received. exiting...\n", sig);
+  log_printf("signal %d received. exiting...", sig);
   running = 0;
 }
 
@@ -63,7 +65,7 @@ static int parse_env_int(const char *env_var, int default_val)
   const char *val = getenv(env_var);
   if (!val)
   {
-    fprintf(stderr, "[WARN] environment variable %s not set. default: %d\n", env_var, default_val);
+    log_printf("environment variable %s not set. default: %d", env_var, default_val);
     return default_val;
   }
 
@@ -74,13 +76,13 @@ static int parse_env_int(const char *env_var, int default_val)
 
   if (errno == ERANGE)
   {
-    fprintf(stderr, "[WARN] value for %s is out of range: %s, using default: %d\n", env_var, val, default_val);
+    log_printf("value for %s is out of range: %s, using default: %d", env_var, val, default_val);
     return default_val;
   }
 
   if (endptr == val || *endptr != '\0' || parsed < INT_MIN || parsed > INT_MAX)
   {
-    fprintf(stderr, "[WARN] invalid value for %s: %s, using default: %d\n", env_var, val, default_val);
+    log_printf("invalid value for %s: %s, using default: %d", env_var, val, default_val);
     return default_val;
   }
 
@@ -91,20 +93,20 @@ static size_t hex_to_bytes(unsigned char *b, size_t b_size, const char *hex)
 {
   if (!b || !hex)
   {
-    fprintf(stderr, "[ERROR] invalid input\n");
+    log_printf("invalid input");
     return 0;
   }
 
   size_t hex_len = strlen(hex);
   if (hex_len % 2 != 0)
   {
-    fprintf(stderr, "[ERROR] hex string must have an even length\n");
+    log_printf("hex string must have an even length");
     return 0;
   }
 
   if (b_size < hex_len / 2)
   {
-    fprintf(stderr, "[ERROR] byte array is too small\n");
+    log_printf("byte array is too small");
     return 0;
   }
 
@@ -113,7 +115,7 @@ static size_t hex_to_bytes(unsigned char *b, size_t b_size, const char *hex)
   {
     if (sscanf(hex + i, "%2x", &byte) != 1)
     {
-      fprintf(stderr, "[ERROR] invalid hex character\n");
+      log_printf("invalid hex character");
       return 0;
     }
     b[i / 2] = (unsigned char)byte;
@@ -122,85 +124,104 @@ static size_t hex_to_bytes(unsigned char *b, size_t b_size, const char *hex)
   return hex_len / 2;
 }
 
+static int exit_code(PGconn *conn, int code)
+{
+  if (conn)
+  {
+    PQfinish(conn);
+  }
+  hmac_cleanup();
+  return code;
+}
+
+long get_current_time_ms(void)
+{
+  struct timespec ts;
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+  {
+    perror("clock_gettime failed");
+    exit(EXIT_FAILURE);
+  }
+  return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
 int main(void)
 {
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
 
-  connstr = getenv("DB_CONNSTR");
-  if (!connstr)
+  conninfo = getenv("DATABASE_URL");
+  if (!conninfo)
   {
-    connstr = DEFAULT_DB_CONNSTR;
-    fprintf(stderr, "[WARN] environment variable DB_CONNSTR not set. default: %s\n", connstr);
+    log_printf("environment variable DATABASE_URL not set");
+    return EXIT_FAILURE;
   }
 
-  channel_name = getenv("CHANNEL_NAME");
+  const char *hmac_keyhex = getenv("SECRET_KEY");
+  if (!hmac_keyhex)
+  {
+    log_printf("environment variable SECRET_KEY not set");
+    return EXIT_FAILURE;
+  }
+
+  if (!is_valid_hmac_key(hmac_keyhex))
+  {
+    log_printf("environment variable SECRET_KEY must be a 64-character hex string");
+    return EXIT_FAILURE;
+  }
+
+  hmac_keylen = hex_to_bytes(hmac_key, sizeof(hmac_key), hmac_keyhex);
+  if (hmac_keylen == 0)
+  {
+    log_printf("failed to decode SECRET_KEY");
+    return EXIT_FAILURE;
+  }
+
+  channel_name = getenv("DB_CHANNEL_NAME");
   if (!channel_name)
   {
-    channel_name = DEFAULT_CHANNEL;
-    fprintf(stderr, "[WARN] environment variable CHANNEL_NAME not set. default: %s\n", channel_name);
+    channel_name = ENV_DB_CHANNEL_NAME;
+    log_printf("environment variable DB_CHANNEL_NAME not set. default: %s", channel_name);
   }
 
-  queue_name = getenv("QUEUE_NAME");
+  queue_name = getenv("DB_QUEUE_NAME");
   if (!queue_name)
   {
-    queue_name = DEFAULT_QUEUE;
-    fprintf(stderr, "[WARN] environment variable QUEUE_NAME not set. default: %s\n", queue_name);
+    queue_name = ENV_DB_QUEUE_NAME;
+    log_printf("environment variable DB_QUEUE_NAME not set. default: %s", queue_name);
   }
 
-  const char *hmac_key_hex = getenv("HMAC_KEY");
-  if (!hmac_key_hex)
-  {
-    fprintf(stderr, "[ERROR] environment variable HMAC_KEY not set\n");
-    return EXIT_FAILURE;
-  }
+  int pg_connect_max_attempts = parse_env_int("DB_RECONNECT_MAX_ATTEMPTS", ENV_DB_RECONNECT_MAX_ATTEMPTS);
+  int pg_connect_interval = parse_env_int("DB_CONNECT_INTERVAL", ENV_DB_RECONNECT_INTERVAL_MS);
 
-  if (!is_valid_hmac_key(hmac_key_hex))
-  {
-    fprintf(stderr, "[ERROR] environment variable HMAC_KEY must be a 64-character hex string\n");
-    return EXIT_FAILURE;
-  }
-
-  hmac_key_len = hex_to_bytes(hmac_key, sizeof(hmac_key), hmac_key_hex);
-  if (hmac_key_len == 0)
-  {
-    fprintf(stderr, "[ERROR] failed to decode HMAC_KEY\n");
-    return EXIT_FAILURE;
-  }
+  int batch_limit = parse_env_int("BATCH_LIMIT", ENV_BATCH_LIMIT);
+  int timeout_ms = parse_env_int("BATCH_TIMEOUT", ENV_BATCH_TIMEOUT_MS);
 
   if (!hmac_init())
   {
-    fprintf(stderr, "[ERROR] failed to init HMAC\n");
-    OPENSSL_cleanse(hmac_key, hmac_key_len);
+    log_printf("failed to init HMAC");
     return EXIT_FAILURE;
   }
 
-  int event_threshold = parse_env_int("EVENT_THRESHOLD", DEFAULT_EVENT_THRESHOLD);
-  int timeout_ms = parse_env_int("TIMEOUT_MS", DEFAULT_TIMEOUT_MS);
+  int result;
 
-  PGconn *conn = PQconnectdb(connstr);
-  if (PQstatus(conn) != CONNECTION_OK)
+  PGconn *conn;
+
+  if ((result = db_connect(&conn, pg_connect_max_attempts, pg_connect_interval)) != 0)
   {
-    fprintf(stderr, "[ERROR] failed to connect to database: %s\n", PQerrorMessage(conn));
-    hmac_cleanup();
-    return EXIT_FAILURE;
+    log_printf("failed to connect to database: %s (code=%d)", PQerrorMessage(conn), result);
+    return exit_code(conn, EXIT_FAILURE);
   }
 
-  if (do_listen(conn) < 0)
+  // Drain at startup
+  while (running && (result = db_dump_csv(conn, batch_limit)) == batch_limit)
+    ; // Continue fetching until fewer than batch_limit rows are returned
+
+  if (result < 0)
   {
-    hmac_cleanup();
-    return EXIT_FAILURE;
+    // Too early for reconnect; exit immediately
+    return exit_code(conn, EXIT_FAILURE);
   }
-
-  if (!prepare_statement(conn))
-  {
-    hmac_cleanup();
-    return EXIT_FAILURE;
-  }
-
-  // Fetch actions at startup with limit of event_threshold rows
-  while (fetch_user_actions(conn, event_threshold) == event_threshold)
-    ; // Continue fetching until fewer than limit rows are returned
 
   fd_set active_fds, read_fds;
   FD_ZERO(&active_fds);
@@ -213,63 +234,109 @@ int main(void)
   PGnotify *notify = NULL;
   int rc = 0;
 
+  long start = get_current_time_ms();
+  long now, elapsed, remaining_ms;
+
+  int ready = 0;
+
   while (running)
   {
-    read_fds = active_fds;
-    tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = (timeout_ms % 1000) * 1000;
-
-    rc = select(sock + 1, &read_fds, NULL, NULL, &tv);
-    if (rc < 0)
+    if (ready)
     {
-      fprintf(stderr, "[ERROR] select failed: %s\n", strerror(errno));
-      break;
+      result = db_dump_csv(conn, seen);
+      if (result < 0)
+      {
+        return exit_code(conn, EXIT_FAILURE);
+      }
+      else if (result != seen)
+      {
+        log_printf("WARN: expected %d rows to be processed, got %d", seen, result);
+      }
+
+      seen = 0;
+      ready = 0;
     }
 
-    if (rc == 0)
+    // Process any pending notifications before select()
+    while (running && (notify = PQnotifies(conn)) != NULL)
     {
-      // Timeout occurred
+      if (seen == 0)
+      {
+        start = get_current_time_ms(); // Received first notification; reset timer
+      }
+      seen++;
+      PQfreemem(notify);
+    }
+
+    if (seen >= batch_limit)
+    {
+      ready = 1;
+      continue; // Skip select() and process immediately
+    }
+
+    now = get_current_time_ms();
+    elapsed = now - start;
+    remaining_ms = timeout_ms - elapsed;
+
+    if (remaining_ms < 0)
+    {
+      remaining_ms = 0;
+    }
+
+    tv.tv_sec = remaining_ms / 1000;
+    tv.tv_usec = (remaining_ms % 1000) * 1000;
+
+    read_fds = active_fds;
+
+    rc = select(sock + 1, &read_fds, NULL, NULL, &tv);
+
+    if (rc < 0)
+    {
+      if (errno == EINTR)
+      {
+        if (!running)
+        {
+          break;
+        }
+        log_printf("select interrupted by signal");
+        continue;
+      }
+      log_printf("select failed: %s (socket=%d)", strerror(errno), sock);
+      break;
+    }
+    else if (rc == 0)
+    {                                // Timeout occurred;
+      start = get_current_time_ms(); // Reset the timer
+
       if (seen > 0)
       {
-        fetch_user_actions(conn, seen);
-        seen = 0; // Reset count
+        ready = 1;
       }
+
       continue;
+    }
+
+    if (!FD_ISSET(sock, &read_fds))
+    {
+      continue;
+    }
+
+    if (!running)
+    {
+      break;
     }
 
     if (!PQconsumeInput(conn))
     {
-      if (!reconnect(&conn))
+      log_printf("error while consuming input: %s", PQerrorMessage(conn));
+      if (PQstatus(conn) != CONNECTION_OK)
       {
-        hmac_cleanup();
-        return EXIT_FAILURE;
+        log_printf("bad connection");
+        break;
       }
-
-      // Fetch actions after reconnecting
-      while (fetch_user_actions(conn, event_threshold) == event_threshold)
-        ;
-
-      sock = PQsocket(conn);
-      FD_ZERO(&active_fds);
-      FD_SET(sock, &active_fds);
       continue;
-    }
-
-    while ((notify = PQnotifies(conn)) != NULL)
-    {
-      seen++;
-      PQfreemem(notify);
-
-      // Fetch actions immediately if threshold is reached
-      if (seen >= event_threshold)
-      {
-        fetch_user_actions(conn, seen);
-        seen = 0; // Reset
-      }
     }
   }
 
-  PQfinish(conn);
-  hmac_cleanup();
-  return EXIT_SUCCESS;
+  return exit_code(conn, EXIT_FAILURE);
 }
