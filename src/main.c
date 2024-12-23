@@ -23,15 +23,10 @@
 
 #define ENV_BATCH_TIMEOUT_MS 5000
 #define ENV_BATCH_LIMIT 10
-
 #define ENV_DB_CHANNEL_NAME "token_insert"
 #define ENV_DB_QUEUE_NAME "user_action_queue"
 #define ENV_DB_RECONNECT_MAX_ATTEMPTS 3
 #define ENV_DB_RECONNECT_INTERVAL_MS 3000
-
-const char *queue_name = NULL;
-const char *channel_name = NULL;
-const char *conninfo = NULL;
 
 unsigned char hmac_key[HMAC_KEY_SIZE] = {0};
 size_t hmac_keylen = 0;
@@ -150,7 +145,7 @@ int main(void)
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
 
-  conninfo = getenv("DATABASE_URL");
+  const char *conninfo = getenv("DATABASE_URL");
   if (!conninfo)
   {
     log_printf("environment variable DATABASE_URL not set");
@@ -177,22 +172,22 @@ int main(void)
     return EXIT_FAILURE;
   }
 
-  channel_name = getenv("DB_CHANNEL_NAME");
+  const char *channel_name = getenv("DB_CHANNEL_NAME");
   if (!channel_name)
   {
     channel_name = ENV_DB_CHANNEL_NAME;
     log_printf("environment variable DB_CHANNEL_NAME not set. default: %s", channel_name);
   }
 
-  queue_name = getenv("DB_QUEUE_NAME");
+  const char *queue_name = getenv("DB_QUEUE_NAME");
   if (!queue_name)
   {
     queue_name = ENV_DB_QUEUE_NAME;
     log_printf("environment variable DB_QUEUE_NAME not set. default: %s", queue_name);
   }
 
-  int pg_connect_max_attempts = parse_env_int("DB_RECONNECT_MAX_ATTEMPTS", ENV_DB_RECONNECT_MAX_ATTEMPTS);
-  int pg_connect_interval = parse_env_int("DB_CONNECT_INTERVAL", ENV_DB_RECONNECT_INTERVAL_MS);
+  int reconn_atts = parse_env_int("DB_RECONNECT_MAX_ATTEMPTS", ENV_DB_RECONNECT_MAX_ATTEMPTS);
+  int reconn_wait = parse_env_int("DB_RECONNECT_INTERVAL", ENV_DB_RECONNECT_INTERVAL_MS);
 
   int batch_limit = parse_env_int("BATCH_LIMIT", ENV_BATCH_LIMIT);
   int timeout_ms = parse_env_int("BATCH_TIMEOUT", ENV_BATCH_TIMEOUT_MS);
@@ -207,14 +202,14 @@ int main(void)
 
   PGconn *conn;
 
-  if ((result = db_connect(&conn, pg_connect_max_attempts, pg_connect_interval)) != 0)
+  if ((result = db_connect(&conn, conninfo, channel_name, reconn_atts, reconn_wait)) != 0)
   {
     log_printf("failed to connect to database: %s (code=%d)", PQerrorMessage(conn), result);
     return exit_code(conn, EXIT_FAILURE);
   }
 
   // Drain at startup
-  while (running && (result = db_dump_csv(conn, batch_limit)) == batch_limit)
+  while (running && (result = db_dump_csv(conn, queue_name, batch_limit)) == batch_limit)
     ; // Continue fetching until fewer than batch_limit rows are returned
 
   if (result < 0)
@@ -243,7 +238,7 @@ int main(void)
   {
     if (ready)
     {
-      result = db_dump_csv(conn, seen);
+      result = db_dump_csv(conn, queue_name, seen);
       if (result < 0)
       {
         return exit_code(conn, EXIT_FAILURE);

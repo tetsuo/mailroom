@@ -1,7 +1,7 @@
-#include "config.h"
 #include "db.h"
 #include "hmac.h"
 #include "base64.h"
+
 #include <libpq-fe.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -117,10 +117,10 @@ static size_t construct_signature_data(char *output, const char *action,
   return offset; // Total length of the constructed data
 }
 
-int db_dump_csv(PGconn *conn, int seen)
+int db_dump_csv(PGconn *conn, const char *queue, int limit)
 {
   static const char *params[2];
-  static char limit[12];
+  static char limitstr[12];
 
   PGresult *res = NULL;
   int action_col, email_col, login_col, code_col, secret_col;
@@ -136,9 +136,9 @@ int db_dump_csv(PGconn *conn, int seen)
 
   size_t hmac_len = 0;
 
-  snprintf(limit, sizeof(limit), "%d", seen);
-  params[0] = queue_name;
-  params[1] = limit;
+  snprintf(limitstr, sizeof(limitstr), "%d", limit);
+  params[0] = queue;
+  params[1] = limitstr;
 
   res = PQexecPrepared(conn, POSTGRES_PREPARED_STMT_NAME, 2, params, NULL, NULL, 0);
   if (PQresultStatus(res) != PGRES_TUPLES_OK)
@@ -245,9 +245,9 @@ int db_dump_csv(PGconn *conn, int seen)
  * @param conn   Pointer to the PostgreSQL connection.
  * @return       0 on success, -1 on failure, or -2 if escaping the channel fails.
  */
-int do_listen(PGconn *conn)
+static int do_listen(PGconn *conn, const char *channel)
 {
-  char *escaped_channel = PQescapeIdentifier(conn, channel_name, strlen(channel_name));
+  char *escaped_channel = PQescapeIdentifier(conn, channel, strlen(channel));
   if (!escaped_channel)
   {
     fprintf(stderr, "[ERROR] failed to escape channel name: %s\n", PQerrorMessage(conn));
@@ -271,14 +271,14 @@ int do_listen(PGconn *conn)
   return 0;
 }
 
-int db_connect(PGconn **conn, int attempts, int wait_sec)
+int db_connect(PGconn **conn, const char *conninfo, const char *channel, int attempts, int wait_sec)
 {
   for (int attempt = 1; attempt <= attempts; attempt++)
   {
     *conn = PQconnectdb(conninfo);
     if (PQstatus(*conn) == CONNECTION_OK)
     {
-      if (do_listen(*conn) < 0)
+      if (do_listen(*conn, channel) < 0)
       {
         return -1;
       }

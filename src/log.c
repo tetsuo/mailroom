@@ -1,7 +1,8 @@
+#include "log.h"
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <time.h>
-#include "log.h"
 
 static void get_timestamp(char *buffer, size_t size)
 {
