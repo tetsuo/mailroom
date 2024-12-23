@@ -186,7 +186,20 @@ int db_dump_csv(PGconn *conn, int seen)
       continue;
     }
 
-    printf("%s,%s,%s,", action, email, login);
+    if (strcmp(action, "activation") == 0)
+    {
+      printf("%d", 1);
+    }
+    else if (strcmp(action, "password_recovery") == 0)
+    {
+      printf("%d", 2);
+    }
+    else
+    {
+      printf("%d", 0);
+    }
+
+    printf(",%s,%s,", email, login);
 
     signature_len = construct_signature_data(signature_buffer, action, secret, code);
 
