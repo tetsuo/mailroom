@@ -1,5 +1,5 @@
 [package]
-name = "mailer"
+name = "worker"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,5 +11,5 @@ opt-level = 2
 [dependencies]
 
 [[bin]]
-name = "mailer"
+name = "worker"
 path = "src/main.rs"
