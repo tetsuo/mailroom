@@ -6,16 +6,26 @@ RUN apk add --no-cache \
     postgresql-dev \
     openssl-dev \
     make \
+    curl \
     && addgroup -g 666 builder \
     && adduser -u 666 -G builder -h /home/builder -D builder
 
 USER builder
 WORKDIR /build
 
-COPY --chown=builder:builder src/main.c src/db.c src/hmac.c src/base64.c src/config.h src/db.h src/hmac.h src/base64.h /build/src/
-COPY Makefile /build/
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable --profile minimal
+
+ENV PATH="/home/builder/.cargo/bin:${PATH}"
+
+COPY --chown=builder:builder src/main.c src/db.c src/hmac.c src/base64.c src/log.c src/config.h src/db.h src/hmac.h src/base64.h src/log.h /build/src/
+COPY --chown=builder:builder Makefile /build/
 
 RUN make release
+
+COPY --chown=builder:builder worker/src/main.rs /build/worker/src/
+COPY --chown=builder:builder worker/Cargo.toml worker/Cargo.lock /build/worker/
+
+RUN (cd /build/worker && cargo build --release)
 
 FROM alpine:latest
 
@@ -23,19 +33,16 @@ RUN apk add --no-cache \
     bash \
     ca-certificates \
     postgresql-libs \
-    aws-cli \
-    jq \
     && addgroup -g 666 runner \
     && adduser -u 666 -G runner -h /home/runner -D runner
 
-RUN mkdir -p /app/data && chown -R runner:runner /app
-VOLUME /app
-WORKDIR /app
+RUN mkdir -p /home/runner && chown -R runner:runner /home/runner
+VOLUME /home/runner
+WORKDIR /home/runner
 
-COPY --from=builder /build/token_harvester /app/
-COPY --chown=runner:runner /send_bulk_templated_email.sh /app/
-COPY --chown=runner:runner /mock_aws_ses.sh /app/
+COPY --from=builder /build/batcher /home/runner/
+COPY --from=builder /build/worker/target/release/worker /home/runner/
 
 USER 666
 
-CMD ["/bin/sh", "-c", "/app/token_harvester | /app/send_bulk_templated_email.sh"]
+CMD ["/bin/sh", "-c", "/home/runner/batcher | /home/runner/worker"]
