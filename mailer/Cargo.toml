@@ -1,0 +1,15 @@
+[package]
+name = "mailer"
+version = "0.1.0"
+edition = "2021"
+
+[profile.release]
+lto = true
+strip = true
+opt-level = 2
+
+[dependencies]
+
+[[bin]]
+name = "mailer"
+path = "src/main.rs"
