@@ -15,8 +15,11 @@ endif
 CFLAGS_RELEASE = -Wall -Wextra -pedantic -std=c99 -O2 -DNDEBUG \
                  -march=native -mtune=native -fomit-frame-pointer \
                  -ffast-math -flto -fvisibility=hidden -fstrict-aliasing \
-                 -fno-plt -fstack-protector-strong $(INCLUDES) \
-                 -D_POSIX_C_SOURCE=199309L
+                 -fno-plt -fstack-protector-strong $(INCLUDES)
+
+ifeq ($(UNAME_S), Linux)
+    CFLAGS_RELEASE += -D_POSIX_C_SOURCE=199309L
+endif
 
 CFLAGS_DEBUG = -Wall -Wextra -pedantic -std=c99 -g -O0 -DDEBUG -fno-omit-frame-pointer $(INCLUDES)
 
