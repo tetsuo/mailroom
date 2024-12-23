@@ -271,39 +271,26 @@ int do_listen(PGconn *conn)
   return 0;
 }
 
-/**
- * Reconnects to the database with retries after a connection failure.
- * Prepares the statement and reinitializes the listening channel upon reconnection.
- *
- * @param conn   Double pointer to the PostgreSQL connection.
- * @return       True if reconnection is successful, false otherwise.
- */
-bool reconnect(PGconn **conn)
+int db_connect(PGconn **conn, int attempts, int wait_sec)
 {
-  fprintf(stderr, "[WARN] reconnecting to database...\n");
-  PQfinish(*conn);
-
-  for (int attempt = 1; attempt <= RECONNECT_MAX_ATTEMPTS; attempt++)
+  for (int attempt = 1; attempt <= attempts; attempt++)
   {
-    *conn = PQconnectdb(connstr);
+    *conn = PQconnectdb(conninfo);
     if (PQstatus(*conn) == CONNECTION_OK)
     {
-      fprintf(stderr, "[INFO] reconnected successfully\n");
       if (do_listen(*conn) < 0)
       {
-        return false;
+        return -1;
       }
-      return prepare_statement(*conn);
+      if (!prepare_statement(*conn))
+      {
+        return -2;
+      }
+      return 0;
     }
-
-    fprintf(stderr, "[ERROR] failed to reconnect (attempt %d/%d): %s\n", attempt, RECONNECT_MAX_ATTEMPTS, PQerrorMessage(*conn));
     PQfinish(*conn);
-
-    if (attempt < RECONNECT_MAX_ATTEMPTS)
-      sleep(RECONNECT_INTERVAL_SECONDS);
+    if (attempt < attempts)
+      sleep(wait_sec);
   }
-
-  fprintf(stderr, "[ERROR] all reconnect attempts failed. exiting...\n");
-
-  return false;
+  return -3;
 }
