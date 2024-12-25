@@ -62,18 +62,11 @@ static const char *QUERY =
     "FROM "
     "    token_data td";
 
-/**
- * Prepares a SQL statement using the provided database connection.
- *
- * @param conn   Pointer to the PostgreSQL connection.
- * @return       True if the statement is successfully prepared, false otherwise.
- */
 bool prepare_statement(PGconn *conn)
 {
   PGresult *res = PQprepare(conn, POSTGRES_PREPARED_STMT_NAME, QUERY, 2, NULL);
   if (PQresultStatus(res) != PGRES_COMMAND_OK)
   {
-    fprintf(stderr, "[ERROR] failed to prepare statement: %s\n", PQerrorMessage(conn));
     PQclear(res);
     return false;
   }
@@ -238,20 +231,12 @@ int db_dump_csv(PGconn *conn, const char *queue, int limit)
   return nrows;
 }
 
-/**
- * Subscribes to a PostgreSQL channel to listen for notifications.
- * Uses the "LISTEN" command with an escaped channel name.
- *
- * @param conn   Pointer to the PostgreSQL connection.
- * @return       0 on success, -1 on failure, or -2 if escaping the channel fails.
- */
-static int do_listen(PGconn *conn, const char *channel)
+static bool db_listen(PGconn *conn, const char *channel)
 {
   char *escaped_channel = PQescapeIdentifier(conn, channel, strlen(channel));
   if (!escaped_channel)
   {
-    fprintf(stderr, "[ERROR] failed to escape channel name: %s\n", PQerrorMessage(conn));
-    return -2;
+    return false;
   }
 
   size_t command_len = strlen("LISTEN ") + strlen(escaped_channel) + 1;
@@ -262,13 +247,12 @@ static int do_listen(PGconn *conn, const char *channel)
   PGresult *res = PQexec(conn, listen_command);
   if (PQresultStatus(res) != PGRES_COMMAND_OK)
   {
-    fprintf(stderr, "[ERROR] failed to listen for notifications: %s\n", PQerrorMessage(conn));
     PQclear(res);
-    return -1;
+    return false;
   }
   PQclear(res);
 
-  return 0;
+  return true;
 }
 
 bool db_connect(PGconn **conn, const char *conninfo, const char *channel)
