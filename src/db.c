@@ -1,3 +1,4 @@
+#include "log.h"
 #include "db.h"
 #include "hmac.h"
 #include "base64.h"
@@ -136,7 +137,7 @@ int db_dump_csv(PGconn *conn, const char *queue, int limit)
   res = PQexecPrepared(conn, POSTGRES_PREPARED_STMT_NAME, 2, params, NULL, NULL, 0);
   if (PQresultStatus(res) != PGRES_TUPLES_OK)
   {
-    fprintf(stderr, "[ERROR] query execution failed: %s\n", PQerrorMessage(conn));
+    log_printf("ERROR: skipping batch; query execution failed: %s", PQerrorMessage(conn));
     PQclear(res);
     return -1;
   }
@@ -157,7 +158,7 @@ int db_dump_csv(PGconn *conn, const char *queue, int limit)
   if (action_col == -1 || email_col == -1 || login_col == -1 ||
       code_col == -1 || secret_col == -1)
   {
-    fprintf(stderr, "[ERROR] missing columns in the result set\n");
+    log_printf("FATAL: missing columns in the result set");
     PQclear(res);
     return -2;
   }
@@ -175,7 +176,7 @@ int db_dump_csv(PGconn *conn, const char *queue, int limit)
     secret = PQunescapeBytea((unsigned char *)secret_text, &secret_len);
     if (!secret || secret_len != 32)
     {
-      fprintf(stderr, "[ERROR] skipping row %d; PQunescapeBytea failed or invalid secret length\n", i);
+      log_printf("ERROR: skipping row; PQunescapeBytea failed or invalid secret length");
       continue;
     }
 
@@ -199,7 +200,7 @@ int db_dump_csv(PGconn *conn, const char *queue, int limit)
     hmac_len = HMAC_RESULT_SIZE;
     if (!hmac_sign(signature_buffer, signature_len, hmac_result, &hmac_len))
     {
-      fprintf(stderr, "[ERROR] HMAC signing failed\n");
+      log_printf("ERROR: skipping row; HMAC signing failed");
       PQfreemem(secret);
       continue;
     }
@@ -209,7 +210,7 @@ int db_dump_csv(PGconn *conn, const char *queue, int limit)
 
     if (!base64_urlencode(base64_encoded, sizeof(base64_encoded), combined_buffer, 32 + hmac_len))
     {
-      fprintf(stderr, "[ERROR] base64_urlencode failed\n");
+      log_printf("ERROR: skipping row; base64 encoding failed");
       PQfreemem(secret);
       continue;
     }
