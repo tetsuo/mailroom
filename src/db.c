@@ -123,10 +123,10 @@ int db_dequeue(PGconn *conn, const char *queue, int limit)
   size_t secret_len;
   int nrows;
 
-  char signature_buffer[SIGNATURE_MAX_INPUT_SIZE];  // Input to sign
-  unsigned char hmac_result[HMAC_RESULT_SIZE];      // HMAC output
-  unsigned char combined_buffer[CONCATENATED_SIZE]; // secret + HMAC
-  char base64_encoded[BASE64_ENCODED_SIZE];         // Base64-encoded output
+  static char signature_buffer[SIGNATURE_MAX_INPUT_SIZE];  // Input to sign
+  static unsigned char hmac_result[HMAC_RESULT_SIZE];      // HMAC output
+  static unsigned char combined_buffer[CONCATENATED_SIZE]; // secret + HMAC
+  static char base64_encoded[BASE64_ENCODED_SIZE];         // Base64-encoded output
 
   size_t hmac_len = 0;
 

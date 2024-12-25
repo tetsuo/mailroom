@@ -18,6 +18,10 @@ typedef struct
 
 static HMAC_Context *hmac_ctx = NULL;
 
+static const OSSL_PARAM params[] = {
+    {OSSL_MAC_PARAM_DIGEST, OSSL_PARAM_UTF8_STRING, (void *)"SHA256", 0, 0},
+    {NULL, 0, NULL, 0, 0}};
+
 /**
  * Initializes the HMAC context.
  * Allocates resources for the HMAC operation and sets up the OpenSSL HMAC engine
@@ -55,10 +59,6 @@ bool hmac_init()
     hmac_ctx = NULL;
     return false;
   }
-
-  OSSL_PARAM params[] = {
-      OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST, "SHA256", 0),
-      OSSL_PARAM_construct_end()};
 
   if (EVP_MAC_init(hmac_ctx->ctx, hmac_key, hmac_keylen, params) != 1)
   {
