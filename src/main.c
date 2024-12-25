@@ -266,12 +266,12 @@ int main(void)
     // Process any pending notifications before select()
     while (running && (notify = PQnotifies(conn)) != NULL)
     {
+      PQfreemem(notify);
       if (seen == 0)
       {
         start = get_current_time_ms(); // Received first notification; reset timer
       }
       seen++;
-      PQfreemem(notify);
     }
 
     if (seen >= batch_limit)
@@ -331,21 +331,25 @@ int main(void)
       continue;
     }
 
-    if (!running)
-    {
-      break;
-    }
+    result = 0;
 
-    if (!PQconsumeInput(conn))
+    do
     {
-      log_printf("error while consuming input: %s", PQerrorMessage(conn));
-      if (PQstatus(conn) != CONNECTION_OK)
+      if (!PQconsumeInput(conn))
       {
-        log_printf("bad connection");
-        break;
+        log_printf("error consuming input: %s", PQerrorMessage(conn));
+        if (PQstatus(conn) != CONNECTION_OK || (++result >= 3))
+        {
+          ready = -1;
+          break;
+        }
+        sleep(1);
       }
-      continue;
-    }
+      else
+      {
+        result = 0;
+      }
+    } while (running && PQisBusy(conn)); // Drain the internal buffer
   }
 
   return exit_code(conn, EXIT_FAILURE);

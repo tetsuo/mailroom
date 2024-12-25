@@ -4,7 +4,7 @@
 #include <libpq-fe.h>
 #include <stdbool.h>
 
-int db_dump_csv(PGconn *conn, const char *queue, int limit);
-int db_connect(PGconn **conn, const char *conninfo, const char *channel, int attempts, int wait_sec);
+int db_dequeue(PGconn *conn, const char *queue, int limit);
+bool db_connect(PGconn **conn, const char *conninfo, const char *channel);
 
 #endif // DB_H

@@ -63,7 +63,7 @@ static const char *QUERY =
     "FROM "
     "    token_data td";
 
-bool prepare_statement(PGconn *conn)
+bool db_prepare_statement(PGconn *conn)
 {
   PGresult *res = PQprepare(conn, POSTGRES_PREPARED_STMT_NAME, QUERY, 2, NULL);
   if (PQresultStatus(res) != PGRES_COMMAND_OK)
@@ -111,7 +111,7 @@ static size_t construct_signature_data(char *output, const char *action,
   return offset; // Total length of the constructed data
 }
 
-int db_dump_csv(PGconn *conn, const char *queue, int limit)
+int db_dequeue(PGconn *conn, const char *queue, int limit)
 {
   static const char *params[2];
   static char limitstr[12];
