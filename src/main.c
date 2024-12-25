@@ -25,8 +25,6 @@
 #define ENV_BATCH_LIMIT 10
 #define ENV_DB_CHANNEL_NAME "token_insert"
 #define ENV_DB_QUEUE_NAME "user_action_queue"
-#define ENV_DB_RECONNECT_MAX_ATTEMPTS 3
-#define ENV_DB_RECONNECT_INTERVAL_MS 3000
 
 unsigned char hmac_key[HMAC_KEY_SIZE] = {0};
 size_t hmac_keylen = 0;
@@ -39,7 +37,7 @@ static void signal_handler(int sig)
   running = 0;
 }
 
-static bool is_valid_hmac_key(const char *key)
+static bool is_valid_hmac_keyhex(const char *key)
 {
   size_t expected_len = HMAC_KEY_SIZE * 2;
 
@@ -60,7 +58,7 @@ static int parse_env_int(const char *env_var, int default_val)
   const char *val = getenv(env_var);
   if (!val)
   {
-    log_printf("environment variable %s not set. default: %d", env_var, default_val);
+    log_printf("%s not set (default=%d)", env_var, default_val);
     return default_val;
   }
 
@@ -129,7 +127,7 @@ static int exit_code(PGconn *conn, int code)
   return code;
 }
 
-long get_current_time_ms(void)
+static long get_current_time_ms(void)
 {
   struct timespec ts;
   if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
@@ -148,20 +146,20 @@ int main(void)
   const char *conninfo = getenv("DATABASE_URL");
   if (!conninfo)
   {
-    log_printf("environment variable DATABASE_URL not set");
+    log_printf("DATABASE_URL not set");
     return EXIT_FAILURE;
   }
 
   const char *hmac_keyhex = getenv("SECRET_KEY");
   if (!hmac_keyhex)
   {
-    log_printf("environment variable SECRET_KEY not set");
+    log_printf("SECRET_KEY not set");
     return EXIT_FAILURE;
   }
 
-  if (!is_valid_hmac_key(hmac_keyhex))
+  if (!is_valid_hmac_keyhex(hmac_keyhex))
   {
-    log_printf("environment variable SECRET_KEY must be a 64-character hex string");
+    log_printf("SECRET_KEY must be a 64-character hex string");
     return EXIT_FAILURE;
   }
 
@@ -176,18 +174,15 @@ int main(void)
   if (!channel_name)
   {
     channel_name = ENV_DB_CHANNEL_NAME;
-    log_printf("environment variable DB_CHANNEL_NAME not set. default: %s", channel_name);
+    log_printf("DB_CHANNEL_NAME not set (default=%s)", channel_name);
   }
 
   const char *queue_name = getenv("DB_QUEUE_NAME");
   if (!queue_name)
   {
     queue_name = ENV_DB_QUEUE_NAME;
-    log_printf("environment variable DB_QUEUE_NAME not set. default: %s", queue_name);
+    log_printf("DB_QUEUE_NAME not set (default=%s)", queue_name);
   }
-
-  int reconn_atts = parse_env_int("DB_RECONNECT_MAX_ATTEMPTS", ENV_DB_RECONNECT_MAX_ATTEMPTS);
-  int reconn_wait = parse_env_int("DB_RECONNECT_INTERVAL", ENV_DB_RECONNECT_INTERVAL_MS);
 
   int batch_limit = parse_env_int("BATCH_LIMIT", ENV_BATCH_LIMIT);
   int timeout_ms = parse_env_int("BATCH_TIMEOUT", ENV_BATCH_TIMEOUT_MS);
@@ -245,7 +240,7 @@ int main(void)
       }
       else if (result != seen)
       {
-        log_printf("WARN: expected %d rows to be processed, got %d", seen, result);
+        log_printf("WARN: expected %d items to be processed, got %d", seen, result);
       }
 
       seen = 0;
@@ -265,6 +260,8 @@ int main(void)
 
     if (seen >= batch_limit)
     {
+      log_printf("max reached; seen %d notifications, processing...", seen);
+
       ready = 1;
       continue; // Skip select() and process immediately
     }
@@ -305,6 +302,7 @@ int main(void)
 
       if (seen > 0)
       {
+        log_printf("timeout; seen %d notifications, processing...", seen);
         ready = 1;
       }
 
@@ -313,6 +311,7 @@ int main(void)
 
     if (!FD_ISSET(sock, &read_fds))
     {
+      log_printf("WARN: sock not set");
       continue;
     }
 
