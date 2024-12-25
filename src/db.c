@@ -271,26 +271,11 @@ static int do_listen(PGconn *conn, const char *channel)
   return 0;
 }
 
-int db_connect(PGconn **conn, const char *conninfo, const char *channel, int attempts, int wait_sec)
+bool db_connect(PGconn **conn, const char *conninfo, const char *channel)
 {
-  for (int attempt = 1; attempt <= attempts; attempt++)
-  {
-    *conn = PQconnectdb(conninfo);
-    if (PQstatus(*conn) == CONNECTION_OK)
-    {
-      if (do_listen(*conn, channel) < 0)
-      {
-        return -1;
-      }
-      if (!prepare_statement(*conn))
-      {
-        return -2;
-      }
-      return 0;
-    }
-    PQfinish(*conn);
-    if (attempt < attempts)
-      sleep(wait_sec);
-  }
-  return -3;
+  *conn = PQconnectdb(conninfo);
+
+  return PQstatus(*conn) == CONNECTION_OK &&
+         db_listen(*conn, channel) &&
+         db_prepare_statement(*conn);
 }
