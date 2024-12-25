@@ -195,28 +195,10 @@ int main(void)
 
   int result;
 
-  PGconn *conn;
-
-  if ((result = db_connect(&conn, conninfo, channel_name, reconn_atts, reconn_wait)) != 0)
-  {
-    log_printf("failed to connect to database: %s (code=%d)", PQerrorMessage(conn), result);
-    return exit_code(conn, EXIT_FAILURE);
-  }
-
-  // Drain at startup
-  while (running && (result = db_dump_csv(conn, queue_name, batch_limit)) == batch_limit)
-    ; // Continue fetching until fewer than batch_limit rows are returned
-
-  if (result < 0)
-  {
-    // Too early for reconnect; exit immediately
-    return exit_code(conn, EXIT_FAILURE);
-  }
+  PGconn *conn = NULL;
 
   fd_set active_fds, read_fds;
-  FD_ZERO(&active_fds);
-  int sock = PQsocket(conn);
-  FD_SET(sock, &active_fds);
+  int sock;
 
   struct timeval tv;
   int seen = 0;
@@ -227,18 +209,52 @@ int main(void)
   long start = get_current_time_ms();
   long now, elapsed, remaining_ms;
 
-  int ready = 0;
+  int ready = -1;
 
   while (running)
   {
-    if (ready)
+    if (ready < 0 || PQstatus(conn) != CONNECTION_OK)
     {
-      result = db_dump_csv(conn, queue_name, seen);
-      if (result < 0)
+      if (conn)
+      {
+        PQfinish(conn);
+      }
+
+      if (!db_connect(&conn, conninfo, channel_name))
+      {
+        log_printf("failed to connect to database: %s", PQerrorMessage(conn));
+        return exit_code(conn, EXIT_FAILURE);
+      }
+
+      log_printf("reconnected; host=%s port=%s dbname=%s user=%s sslmode=%s", PQhost(conn), PQport(conn), PQdb(conn), PQuser(conn), PQsslInUse(conn) ? "require" : "disable");
+
+      while (running && (result = db_dequeue(conn, queue_name, batch_limit)) == batch_limit)
+        ;
+
+      if (result < -1)
       {
         return exit_code(conn, EXIT_FAILURE);
       }
-      else if (result != seen)
+
+      FD_ZERO(&active_fds);
+      sock = PQsocket(conn);
+      FD_SET(sock, &active_fds);
+
+      seen = 0;
+      ready = 0;
+
+      continue;
+    }
+    else if (ready > 0)
+    {
+      log_printf("processing %d items...", seen);
+
+      result = db_dequeue(conn, queue_name, seen);
+      if (result < -1)
+      {
+        return exit_code(conn, EXIT_FAILURE);
+      }
+      else if (result > 0 && result != seen)
       {
         log_printf("WARN: expected %d items to be processed, got %d", seen, result);
       }
