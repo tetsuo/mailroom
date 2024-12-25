@@ -137,7 +137,7 @@ int db_dequeue(PGconn *conn, const char *queue, int limit)
   res = PQexecPrepared(conn, POSTGRES_PREPARED_STMT_NAME, 2, params, NULL, NULL, 0);
   if (PQresultStatus(res) != PGRES_TUPLES_OK)
   {
-    log_printf("ERROR: skipping batch; query execution failed: %s", PQerrorMessage(conn));
+    log_printf("ERROR: query execution failed: %s", PQerrorMessage(conn));
     PQclear(res);
     return -1;
   }
@@ -176,7 +176,7 @@ int db_dequeue(PGconn *conn, const char *queue, int limit)
     secret = PQunescapeBytea((unsigned char *)secret_text, &secret_len);
     if (!secret || secret_len != 32)
     {
-      log_printf("ERROR: skipping row; PQunescapeBytea failed or invalid secret length");
+      log_printf("WARN: skipping row; PQunescapeBytea failed or invalid secret length");
       continue;
     }
 
@@ -200,7 +200,7 @@ int db_dequeue(PGconn *conn, const char *queue, int limit)
     hmac_len = HMAC_RESULT_SIZE;
     if (!hmac_sign(signature_buffer, signature_len, hmac_result, &hmac_len))
     {
-      log_printf("ERROR: skipping row; HMAC signing failed");
+      log_printf("WARN: skipping row; HMAC signing failed");
       PQfreemem(secret);
       continue;
     }
@@ -210,7 +210,7 @@ int db_dequeue(PGconn *conn, const char *queue, int limit)
 
     if (!base64_urlencode(base64_encoded, sizeof(base64_encoded), combined_buffer, 32 + hmac_len))
     {
-      log_printf("ERROR: skipping row; base64 encoding failed");
+      log_printf("WARN: skipping row; base64 encoding failed");
       PQfreemem(secret);
       continue;
     }
@@ -259,6 +259,8 @@ static bool db_listen(PGconn *conn, const char *channel)
 bool db_connect(PGconn **conn, const char *conninfo, const char *channel)
 {
   *conn = PQconnectdb(conninfo);
+
+  log_printf("connecting to database host=%s port=%s dbname=%s user=%s sslmode=%s", PQhost(*conn), PQport(*conn), PQdb(*conn), PQuser(*conn), PQsslInUse(*conn) ? "require" : "disable");
 
   return PQstatus(*conn) == CONNECTION_OK &&
          db_listen(*conn, channel) &&
