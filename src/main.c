@@ -279,6 +279,7 @@ int main(void)
         start = get_current_time_ms(); // Received first notification; reset timer
       }
       seen++;
+      PQconsumeInput(conn);
     }
 
     if (seen >= batch_limit)
