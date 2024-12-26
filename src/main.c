@@ -241,7 +241,7 @@ int main(void)
 
   while (running)
   {
-    if (ready < 0 || PQstatus(conn) != CONNECTION_OK)
+    if (ready < 0)
     {
       if (conn)
       {
@@ -352,36 +352,33 @@ int main(void)
         log_printf("timeout; processing %d rows...", seen);
 
         ready = 1;
+        continue;
       }
-
-      continue;
+      else if ((sock = PQsocket(conn)) < 0)
+      {
+        log_printf("WARN: socket closed; %s", PQerrorMessage(conn));
+        ready = -1;
+        break;
+      }
     }
 
     if (!FD_ISSET(sock, &read_fds))
     {
-      log_printf("WARN: sock not set");
       continue;
     }
-
-    result = 0;
 
     do
     {
       if (!PQconsumeInput(conn))
       {
         log_printf("error consuming input: %s", PQerrorMessage(conn));
-        if (PQstatus(conn) != CONNECTION_OK || (++result >= 3))
+        if (PQstatus(conn) != CONNECTION_OK)
         {
           ready = -1;
           break;
         }
-        sleep_microseconds(100000);
       }
-      else
-      {
-        result = 0;
-      }
-    } while (running && PQisBusy(conn)); // Drain the internal buffer
+    } while (running && PQisBusy(conn));
   }
 
   return exit_code(conn, EXIT_FAILURE);
