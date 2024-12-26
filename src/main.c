@@ -215,6 +215,8 @@ int main(void)
   int batch_limit = parse_env_int("BATCH_LIMIT", ENV_BATCH_LIMIT);
   int timeout_ms = parse_env_int("BATCH_TIMEOUT", ENV_BATCH_TIMEOUT_MS);
 
+  log_printf("configured; channel=%s queue=%s limit=%d timeout=%dms", channel_name, queue_name, batch_limit, timeout_ms);
+
   if (!hmac_init())
   {
     log_printf("failed to init HMAC");
@@ -282,6 +284,8 @@ int main(void)
       }
       else if (result == -1)
       {
+        log_printf("forcing reconnect...");
+
         ready = -1; // Force reconnect
         continue;
       }

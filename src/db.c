@@ -260,7 +260,7 @@ bool db_connect(PGconn **conn, const char *conninfo, const char *channel)
 {
   *conn = PQconnectdb(conninfo);
 
-  log_printf("connecting to database host=%s port=%s dbname=%s user=%s sslmode=%s", PQhost(*conn), PQport(*conn), PQdb(*conn), PQuser(*conn), PQsslInUse(*conn) ? "require" : "disable");
+  log_printf("connecting; host=%s port=%s dbname=%s user=%s sslmode=%s", PQhost(*conn), PQport(*conn), PQdb(*conn), PQuser(*conn), PQsslInUse(*conn) ? "require" : "disable");
 
   return PQstatus(*conn) == CONNECTION_OK &&
          db_listen(*conn, channel) &&
