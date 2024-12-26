@@ -138,34 +138,6 @@ static long get_current_time_ms(void)
   return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
-static void sleep_microseconds(useconds_t usec)
-{
-  struct timespec ts;
-  ts.tv_sec = usec / 1000000;
-  ts.tv_nsec = (usec % 1000000) * 1000;
-  nanosleep(&ts, NULL);
-}
-
-static int db_dequeue_chunked(PGconn *conn, const char *queue, int remaining, int max_chunk_size)
-{
-  int result = 0;
-  int chunk_size = 0;
-  int total = 0;
-  while (remaining > 0)
-  {
-    chunk_size = remaining > max_chunk_size ? max_chunk_size : remaining;
-    result = db_dequeue(conn, queue, chunk_size);
-    if (result < 0)
-    {
-      return result;
-    }
-    total += result;
-    remaining -= chunk_size;
-    sleep_microseconds(10000); // 10ms
-  }
-  return total;
-}
-
 int main(void)
 {
   signal(SIGINT, signal_handler);
@@ -258,7 +230,7 @@ int main(void)
 
       log_printf("connected");
 
-      while (running && (result = db_dequeue_chunked(conn, queue_name, batch_limit, batch_limit)) == batch_limit)
+      while (running && (result = db_dequeue(conn, queue_name, batch_limit, batch_limit)) == batch_limit)
         ;
 
       if (result < 0)
@@ -277,7 +249,7 @@ int main(void)
     }
     else if (ready > 0)
     {
-      result = db_dequeue_chunked(conn, queue_name, seen, batch_limit);
+      result = db_dequeue(conn, queue_name, seen, batch_limit);
       if (result == -2)
       {
         return exit_code(conn, EXIT_FAILURE);

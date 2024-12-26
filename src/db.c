@@ -63,9 +63,9 @@ static const char *QUERY =
     "FROM "
     "    token_data td";
 
-bool db_prepare_statement(PGconn *conn)
+bool db_prepare_statement(PGconn *conn, const char *stmt_name, const char *query)
 {
-  PGresult *res = PQprepare(conn, POSTGRES_PREPARED_STMT_NAME, QUERY, 2, NULL);
+  PGresult *res = PQprepare(conn, stmt_name, query, 2, NULL);
   if (PQresultStatus(res) != PGRES_COMMAND_OK)
   {
     PQclear(res);
@@ -111,7 +111,7 @@ static size_t construct_signature_data(char *output, const char *action,
   return offset; // Total length of the constructed data
 }
 
-int db_dequeue(PGconn *conn, const char *queue, int limit)
+static int _db_dequeue(PGconn *conn, const char *queue, int limit)
 {
   static const char *params[2];
   static char limitstr[12];
@@ -232,6 +232,34 @@ int db_dequeue(PGconn *conn, const char *queue, int limit)
   return nrows;
 }
 
+static void sleep_microseconds(useconds_t usec)
+{
+  struct timespec ts;
+  ts.tv_sec = usec / 1000000;
+  ts.tv_nsec = (usec % 1000000) * 1000;
+  nanosleep(&ts, NULL);
+}
+
+int db_dequeue(PGconn *conn, const char *queue, int remaining, int max_chunk_size)
+{
+  int result = 0;
+  int chunk_size = 0;
+  int total = 0;
+  while (remaining > 0)
+  {
+    chunk_size = remaining > max_chunk_size ? max_chunk_size : remaining;
+    result = _db_dequeue(conn, queue, chunk_size);
+    if (result < 0)
+    {
+      return result;
+    }
+    total += result;
+    remaining -= chunk_size;
+    sleep_microseconds(10000); // 10ms
+  }
+  return total;
+}
+
 static bool db_listen(PGconn *conn, const char *channel)
 {
   char *escaped_channel = PQescapeIdentifier(conn, channel, strlen(channel));
@@ -265,4 +293,5 @@ bool db_connect(PGconn **conn, const char *conninfo, const char *channel)
   return PQstatus(*conn) == CONNECTION_OK &&
          db_listen(*conn, channel) &&
          db_prepare_statement(*conn);
+         db_prepare_statement(*conn, POSTGRES_PREPARED_STMT_NAME, QUERY);
 }
