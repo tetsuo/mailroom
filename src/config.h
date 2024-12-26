@@ -4,9 +4,9 @@
 #include <stddef.h>
 #include <signal.h>
 
-#define HMAC_KEY_SIZE 32
+#define HMAC_SECRET_SIZE 32
 
-extern unsigned char hmac_key[HMAC_KEY_SIZE];
-extern size_t hmac_keylen;
+extern unsigned char hmac_secret[HMAC_SECRET_SIZE];
+extern size_t hmac_secretlen;
 
 #endif // CONFIG_H

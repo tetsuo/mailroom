@@ -26,8 +26,8 @@
 #define ENV_DB_CHANNEL_NAME "token_insert"
 #define ENV_DB_QUEUE_NAME "user_action_queue"
 
-unsigned char hmac_key[HMAC_KEY_SIZE] = {0};
-size_t hmac_keylen = 0;
+unsigned char hmac_secret[HMAC_SECRET_SIZE] = {0};
+size_t hmac_secretlen = 0;
 
 static volatile sig_atomic_t running = 1;
 
@@ -37,9 +37,9 @@ static void signal_handler(int sig)
   running = 0;
 }
 
-static bool is_valid_hmac_keyhex(const char *key)
+static bool is_valid_hmac_secrethex(const char *key)
 {
-  size_t expected_len = HMAC_KEY_SIZE * 2;
+  size_t expected_len = HMAC_SECRET_SIZE * 2;
 
   if (!key || strlen(key) != expected_len)
     return false;
@@ -178,21 +178,21 @@ int main(void)
     return EXIT_FAILURE;
   }
 
-  const char *hmac_keyhex = getenv("SECRET_KEY");
-  if (!hmac_keyhex)
+  const char *hmac_secrethex = getenv("SECRET_KEY");
+  if (!hmac_secrethex)
   {
     log_printf("SECRET_KEY not set");
     return EXIT_FAILURE;
   }
 
-  if (!is_valid_hmac_keyhex(hmac_keyhex))
+  if (!is_valid_hmac_secrethex(hmac_secrethex))
   {
     log_printf("SECRET_KEY must be a 64-character hex string");
     return EXIT_FAILURE;
   }
 
-  hmac_keylen = hex_to_bytes(hmac_key, sizeof(hmac_key), hmac_keyhex);
-  if (hmac_keylen == 0)
+  hmac_secretlen = hex_to_bytes(hmac_secret, sizeof(hmac_secret), hmac_secrethex);
+  if (hmac_secretlen == 0)
   {
     log_printf("failed to decode SECRET_KEY");
     return EXIT_FAILURE;
