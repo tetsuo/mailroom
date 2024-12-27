@@ -329,14 +329,13 @@ int main(void)
         log_printf("timeout; processing %d rows...", seen);
 
         ready = 1;
-        continue;
       }
       else if ((sock = PQsocket(conn)) < 0)
       {
         log_printf("WARN: socket closed; %s", PQerrorMessage(conn));
         ready = -1;
-        break;
       }
+      continue;
     }
 
     if (!FD_ISSET(sock, &read_fds))
