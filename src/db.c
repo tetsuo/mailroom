@@ -8,14 +8,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 
 #define SIGNATURE_MAX_INPUT_SIZE 46
 #define HMAC_RESULT_SIZE 32
 #define CONCATENATED_SIZE 64
 #define BASE64_ENCODED_SIZE 89
-#define POSTGRES_PREPARED_STMT_NAME "1"
+#define POSTGRES_DATA_PREPARED_STMT_NAME "1"
+#define POSTGRES_HEALTHCHECK_PREPARED_STMT_NAME "2"
 
-static const char *QUERY =
+static const char *token_data =
     "WITH token_data AS ( "
     "    SELECT "
     "        t.account, "
@@ -134,7 +136,7 @@ static int _db_dequeue(PGconn *conn, const char *queue, int limit)
   params[0] = queue;
   params[1] = limitstr;
 
-  res = PQexecPrepared(conn, POSTGRES_PREPARED_STMT_NAME, 2, params, NULL, NULL, 0);
+  res = PQexecPrepared(conn, POSTGRES_DATA_PREPARED_STMT_NAME, 2, params, NULL, NULL, 0);
   if (PQresultStatus(res) != PGRES_TUPLES_OK)
   {
     log_printf("ERROR: query execution failed: %s", PQerrorMessage(conn));
@@ -260,6 +262,27 @@ int db_dequeue(PGconn *conn, const char *queue, int remaining, int max_chunk_siz
   return total;
 }
 
+bool db_healthcheck(PGconn *conn)
+{
+  if (!conn || PQstatus(conn) != CONNECTION_OK)
+  {
+    log_printf("ERROR: healthcheck failed; connection is invalid: %s\n", PQerrorMessage(conn));
+    return false;
+  }
+
+  PGresult *res = PQexecPrepared(conn, POSTGRES_HEALTHCHECK_PREPARED_STMT_NAME, 0, NULL, NULL, NULL, 0);
+  if (!res || PQresultStatus(res) != PGRES_TUPLES_OK)
+  {
+    log_printf("ERROR: healthcheck failed; %s", PQerrorMessage(conn));
+    PQclear(res);
+    return -1;
+  }
+
+  PQclear(res);
+
+  return true;
+}
+
 static bool db_listen(PGconn *conn, const char *channel)
 {
   char *escaped_channel = PQescapeIdentifier(conn, channel, strlen(channel));
@@ -292,6 +315,6 @@ bool db_connect(PGconn **conn, const char *conninfo, const char *channel)
 
   return PQstatus(*conn) == CONNECTION_OK &&
          db_listen(*conn, channel) &&
-         db_prepare_statement(*conn);
-         db_prepare_statement(*conn, POSTGRES_PREPARED_STMT_NAME, QUERY);
+         db_prepare_statement(*conn, POSTGRES_HEALTHCHECK_PREPARED_STMT_NAME, "SELECT 1") &&
+         db_prepare_statement(*conn, POSTGRES_DATA_PREPARED_STMT_NAME, token_data);
 }

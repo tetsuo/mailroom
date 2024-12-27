@@ -13,7 +13,6 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <limits.h>
-#include <sys/time.h>
 #include <openssl/crypto.h>
 
 #ifdef __linux__
@@ -25,6 +24,7 @@
 #define ENV_BATCH_LIMIT 10
 #define ENV_DB_CHANNEL_NAME "token_insert"
 #define ENV_DB_QUEUE_NAME "user_action_queue"
+#define ENV_DB_HEALTHCHECK_INTERVAL_MS 60000
 
 unsigned char hmac_secret[HMAC_SECRET_SIZE] = {0};
 size_t hmac_secretlen = 0;
@@ -186,6 +186,15 @@ int main(void)
 
   int batch_limit = parse_env_int("BATCH_LIMIT", ENV_BATCH_LIMIT);
   int timeout_ms = parse_env_int("BATCH_TIMEOUT", ENV_BATCH_TIMEOUT_MS);
+  int idle_max = parse_env_int("DB_HEALTHCHECK_INTERVAL_MS", ENV_DB_HEALTHCHECK_INTERVAL_MS);
+
+  if (idle_max < timeout_ms || (idle_max != timeout_ms && idle_max < timeout_ms * 2))
+  {
+    log_printf("DB_HEALTHCHECK_INTERVAL_MS must be greater than BATCH_TIMEOUT by a factor, or equal to it");
+    return EXIT_FAILURE;
+  }
+
+  idle_max = idle_max / timeout_ms;
 
   log_printf("configured; channel=%s queue=%s limit=%d timeout=%dms", channel_name, queue_name, batch_limit, timeout_ms);
 
@@ -212,6 +221,7 @@ int main(void)
   long now, elapsed, remaining_ms;
 
   int ready = -1;
+  int idle = 0;
 
   while (running)
   {
@@ -244,6 +254,7 @@ int main(void)
 
       seen = 0;
       ready = 0;
+      idle = 0;
 
       continue;
     }
@@ -268,6 +279,7 @@ int main(void)
 
       seen = 0;
       ready = 0;
+      idle = 0;
     }
 
     // Process any pending notifications before select()
@@ -329,13 +341,30 @@ int main(void)
         log_printf("timeout; processing %d rows...", seen);
 
         ready = 1;
+        continue;
       }
-      else if ((sock = PQsocket(conn)) < 0)
+
+      if ((sock = PQsocket(conn)) < 0)
       {
         log_printf("WARN: socket closed; %s", PQerrorMessage(conn));
         ready = -1;
+        continue;
       }
-      continue;
+
+      idle += 1;
+      if (idle >= idle_max)
+      {
+        if (!db_healthcheck(conn))
+        {
+          log_printf("WARN: healthcheck; connection lost; %s", PQerrorMessage(conn));
+          ready = -1;
+          continue;
+        }
+        else
+        {
+          idle = 0;
+        }
+      }
     }
 
     if (!FD_ISSET(sock, &read_fds))
