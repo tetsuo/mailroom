@@ -188,9 +188,9 @@ int main(void)
   int timeout_ms = parse_env_int("BATCH_TIMEOUT", ENV_BATCH_TIMEOUT_MS);
   int idle_max = parse_env_int("DB_HEALTHCHECK_INTERVAL_MS", ENV_DB_HEALTHCHECK_INTERVAL_MS);
 
-  if (idle_max < timeout_ms || (idle_max != timeout_ms && idle_max < timeout_ms * 2))
+  if (idle_max < timeout_ms)
   {
-    log_printf("DB_HEALTHCHECK_INTERVAL_MS must be greater than BATCH_TIMEOUT by a factor, or equal to it");
+    log_printf("DB_HEALTHCHECK_INTERVAL_MS must be greater than BATCH_TIMEOUT, or equal to it");
     return EXIT_FAILURE;
   }
 
