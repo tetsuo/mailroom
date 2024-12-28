@@ -1,0 +1,23 @@
+[package]
+name = "sendmail"
+version = "0.1.0"
+edition = "2021"
+
+[profile.dev]
+incremental = true
+
+[profile.release]
+lto = true
+strip = true
+opt-level = 2
+codegen-units = 1
+
+[dependencies]
+chrono = "*"
+aws-sdk-ses = "*"
+aws-config = { version = "*", features = ["behavior-version-latest"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[[bin]]
+name = "mfsendmail"
+path = "src/main.rs"
