@@ -253,10 +253,10 @@ impl Parser {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    let dev_mode = env::var("MF_DEBUG").unwrap_or_else(|_| "false".to_string()) == "true";
-    let config_set_name = env::var("MF_SES_CONFIG_SET").unwrap_or_else(|_| "default".to_string());
-    let from_email = env::var("MF_SES_SOURCE").unwrap_or_else(|_| "noreply@localhost".to_string());
-    let outdir = env::var("MF_SES_OUTPUT_PATH").unwrap_or_else(|_| "./output".to_string());
+    let dev_mode = env::var("MB_DEBUG").unwrap_or_else(|_| "false".to_string()) == "true";
+    let outdir = env::var("MB_RESPONSE_OUTPUT_PATH").unwrap_or_else(|_| "./output".to_string());
+    let config_set_name = env::var("MB_SES_CONFIG_SET").unwrap_or_else(|_| "default".to_string());
+    let from_email = env::var("MB_SES_SOURCE").unwrap_or_else(|_| "noreply@localhost".to_string());
 
     log!(
         "configured; debug={} config_set={} source={} output_path={}",

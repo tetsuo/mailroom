@@ -22,10 +22,13 @@ COPY --chown=builder:builder Makefile /build/
 
 RUN make release
 
-COPY --chown=builder:builder worker/src/main.rs /build/worker/src/
-COPY --chown=builder:builder worker/Cargo.toml worker/Cargo.lock /build/worker/
+COPY --chown=builder:builder sender/Cargo.toml sender/Cargo.lock /build/sender/
 
-RUN (cd /build/worker && cargo build --release)
+RUN (cd /build/sender && cargo fetch)
+
+COPY --chown=builder:builder sender/src/main.rs /build/sender/src/
+
+RUN (cd /build/sender && cargo build --release)
 
 FROM alpine:latest
 
@@ -36,13 +39,13 @@ RUN apk add --no-cache \
     && addgroup -g 666 runner \
     && adduser -u 666 -G runner -h /home/runner -D runner
 
-RUN mkdir -p /home/runner && chown -R runner:runner /home/runner
+RUN mkdir -p /home/runner/output && chown -R runner:runner /home/runner
 VOLUME /home/runner
 WORKDIR /home/runner
 
 COPY --from=builder /build/listener /home/runner/
-COPY --from=builder /build/worker/target/release/worker /home/runner/
+COPY --from=builder /build/sender/target/release/sender /home/runner/
 
 USER 666
 
-CMD ["/bin/sh", "-c", "/home/runner/listener | /home/runner/worker"]
+CMD ["/bin/sh", "-c", "/home/runner/listener | /home/runner/sender"]

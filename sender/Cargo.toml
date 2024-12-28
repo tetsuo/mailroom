@@ -1,5 +1,5 @@
 [package]
-name = "sendmail"
+name = "sender"
 version = "0.1.0"
 edition = "2021"
 
@@ -19,5 +19,5 @@ aws-config = { version = "*", features = ["behavior-version-latest"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [[bin]]
-name = "mfsendmail"
+name = "sender"
 path = "src/main.rs"

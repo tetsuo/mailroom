@@ -24,7 +24,7 @@
 #define ENV_BATCH_LIMIT 10
 #define ENV_DB_CHANNEL_NAME "token_insert"
 #define ENV_DB_QUEUE_NAME "user_action_queue"
-#define ENV_DB_HEALTHCHECK_INTERVAL 290000
+#define ENV_DB_HEALTHCHECK_INTERVAL 270000
 
 unsigned char hmac_secret[HMAC_SECRET_SIZE] = {0};
 size_t hmac_secretlen = 0;
@@ -142,55 +142,55 @@ int main(void)
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
 
-  const char *conninfo = getenv("DATABASE_URL");
+  const char *conninfo = getenv("MB_DATABASE_URL");
   if (!conninfo)
   {
-    log_printf("DATABASE_URL not set");
+    log_printf("MB_DATABASE_URL not set");
     return EXIT_FAILURE;
   }
 
-  const char *hmac_secrethex = getenv("SECRET_KEY");
+  const char *hmac_secrethex = getenv("MB_SECRET_KEY");
   if (!hmac_secrethex)
   {
-    log_printf("SECRET_KEY not set");
+    log_printf("MB_SECRET_KEY not set");
     return EXIT_FAILURE;
   }
 
   if (!is_valid_hmac_secrethex(hmac_secrethex))
   {
-    log_printf("SECRET_KEY must be a 64-character hex string");
+    log_printf("MB_SECRET_KEY must be a 64-character hex string");
     return EXIT_FAILURE;
   }
 
   hmac_secretlen = hex_to_bytes(hmac_secret, sizeof(hmac_secret), hmac_secrethex);
   if (hmac_secretlen == 0)
   {
-    log_printf("failed to decode SECRET_KEY");
+    log_printf("failed to decode MB_SECRET_KEY");
     return EXIT_FAILURE;
   }
 
-  const char *channel_name = getenv("DB_CHANNEL_NAME");
+  const char *channel_name = getenv("MB_CHANNEL_NAME");
   if (!channel_name)
   {
     channel_name = ENV_DB_CHANNEL_NAME;
   }
 
-  const char *queue_name = getenv("DB_QUEUE_NAME");
+  const char *queue_name = getenv("MB_QUEUE_NAME");
   if (!queue_name)
   {
     queue_name = ENV_DB_QUEUE_NAME;
   }
 
-  int healthcheck_ms = parse_env_int("DB_HEALTHCHECK_INTERVAL", ENV_DB_HEALTHCHECK_INTERVAL);
-  int timeout_ms = parse_env_int("BATCH_TIMEOUT", ENV_BATCH_TIMEOUT);
+  int healthcheck_ms = parse_env_int("MB_HEALTHCHECK_INTERVAL", ENV_DB_HEALTHCHECK_INTERVAL);
+  int timeout_ms = parse_env_int("MB_BATCH_TIMEOUT", ENV_BATCH_TIMEOUT);
 
   if (healthcheck_ms < timeout_ms)
   {
-    log_printf("DB_HEALTHCHECK_INTERVAL must be greater than BATCH_TIMEOUT, or equal to it");
+    log_printf("MB_HEALTHCHECK_INTERVAL must be greater than MB_BATCH_TIMEOUT, or equal to it");
     return EXIT_FAILURE;
   }
 
-  int batch_limit = parse_env_int("BATCH_LIMIT", ENV_BATCH_LIMIT);
+  int batch_limit = parse_env_int("MB_BATCH_LIMIT", ENV_BATCH_LIMIT);
 
   log_printf("configured; channel=%s queue=%s limit=%d timeout=%dms healthcheck-interval=%dms", channel_name, queue_name, batch_limit, timeout_ms, healthcheck_ms);
 
