@@ -1,4 +1,4 @@
-# mailboy
+# mailroom
 
 WIP
 
