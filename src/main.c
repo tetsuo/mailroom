@@ -194,8 +194,6 @@ int main(void)
 
   log_printf("configured with channel=%s queue=%s limit=%d timeout=%dms healthcheck-interval=%dms", channel_name, queue_name, batch_limit, timeout_ms, healthcheck_ms);
 
-  healthcheck_ms = healthcheck_ms / timeout_ms;
-
   if (!hmac_init())
   {
     log_printf("PANIC: failed to init HMAC");
