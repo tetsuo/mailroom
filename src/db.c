@@ -275,7 +275,7 @@ bool db_healthcheck(PGconn *conn)
   {
     log_printf("ERROR: healthcheck failed; %s", PQerrorMessage(conn));
     PQclear(res);
-    return -1;
+    return false;
   }
 
   PQclear(res);
