@@ -58,7 +58,6 @@ static int parse_env_int(const char *env_var, int default_val)
   const char *val = getenv(env_var);
   if (!val)
   {
-    log_printf("%s not set (default=%d)", env_var, default_val);
     return default_val;
   }
 
@@ -69,13 +68,13 @@ static int parse_env_int(const char *env_var, int default_val)
 
   if (errno == ERANGE)
   {
-    log_printf("value for %s is out of range: %s, using default: %d", env_var, val, default_val);
+    log_printf("WARN: value for %s is out of range: %s, using default: %d", env_var, val, default_val);
     return default_val;
   }
 
   if (endptr == val || *endptr != '\0' || parsed < INT_MIN || parsed > INT_MAX)
   {
-    log_printf("invalid value for %s: %s, using default: %d", env_var, val, default_val);
+    log_printf("WARN: invalid value for %s: %s, using default: %d", env_var, val, default_val);
     return default_val;
   }
 
@@ -174,7 +173,6 @@ int main(void)
   if (!channel_name)
   {
     channel_name = ENV_DB_CHANNEL_NAME;
-    log_printf("DB_CHANNEL_NAME not set (default=%s)", channel_name);
   }
 
   const char *queue_name = getenv("DB_QUEUE_NAME");
@@ -235,7 +233,7 @@ int main(void)
 
       if (!db_connect(&conn, conninfo, channel_name))
       {
-        log_printf("failed to connect to database: %s", PQerrorMessage(conn));
+        log_printf("ERROR: connection failed: %s", PQerrorMessage(conn));
         return exit_code(conn, EXIT_FAILURE);
       }
 
@@ -268,9 +266,8 @@ int main(void)
       }
       else if (result == -1)
       {
-        log_printf("forcing reconnect...");
-
-        ready = -1; // Force reconnect
+        log_printf("WARN: forcing reconnect...");
+        ready = -1;
         continue;
       }
       else if (result != seen)
@@ -289,6 +286,7 @@ int main(void)
       PQfreemem(notify);
       if (seen == 0)
       {
+        log_printf("NOTIFY called; waking up");
         start = get_current_time_ms(); // Received first notification; reset timer
       }
       seen++;
@@ -297,7 +295,7 @@ int main(void)
 
     if (seen >= batch_limit)
     {
-      log_printf("max reached; processing %d rows...", seen);
+      log_printf("processing %d rows... (max reached)", seen);
 
       ready = 1;
       continue; // Skip select() and process immediately
@@ -327,10 +325,10 @@ int main(void)
         {
           break;
         }
-        log_printf("select interrupted by signal");
+        log_printf("WARN: select interrupted by signal");
         continue;
       }
-      log_printf("select failed: %s (socket=%d)", strerror(errno), sock);
+      log_printf("ERROR: select failed: %s (socket=%d)", strerror(errno), sock);
       break;
     }
     else if (rc == 0)
@@ -339,7 +337,7 @@ int main(void)
 
       if (seen > 0)
       {
-        log_printf("timeout; processing %d rows...", seen);
+        log_printf("processing %d rows... (timeout)", seen);
 
         ready = 1;
         continue;
@@ -375,7 +373,7 @@ int main(void)
     {
       if (!PQconsumeInput(conn))
       {
-        log_printf("error consuming input: %s", PQerrorMessage(conn));
+        log_printf("WARN: error consuming input: %s", PQerrorMessage(conn));
         if (PQstatus(conn) != CONNECTION_OK)
         {
           ready = -1;

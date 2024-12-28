@@ -77,17 +77,6 @@ bool db_prepare_statement(PGconn *conn, const char *stmt_name, const char *query
   return true;
 }
 
-/**
- * Constructs the signature data for HMAC signing based on the action type.
- * The signature data format differs between "activation" and "password_recovery".
- *
- * @param output       Buffer to store the constructed signature data.
- * @param action       The action type (e.g., "activation" or "password_recovery").
- * @param secret       Pointer to the secret key.
- * @param secret_len   Length of the secret key.
- * @param code         Optional code (used for "password_recovery").
- * @return             Total length of the constructed signature data.
- */
 static size_t construct_signature_data(char *output, const char *action,
                                        const unsigned char *secret, const char *code)
 {
@@ -311,7 +300,7 @@ bool db_connect(PGconn **conn, const char *conninfo, const char *channel)
 {
   *conn = PQconnectdb(conninfo);
 
-  log_printf("connecting; host=%s port=%s dbname=%s user=%s sslmode=%s", PQhost(*conn), PQport(*conn), PQdb(*conn), PQuser(*conn), PQsslInUse(*conn) ? "require" : "disable");
+  log_printf("connecting to host=%s port=%s dbname=%s user=%s sslmode=%s", PQhost(*conn), PQport(*conn), PQdb(*conn), PQuser(*conn), PQsslInUse(*conn) ? "require" : "disable");
 
   return PQstatus(*conn) == CONNECTION_OK &&
          db_listen(*conn, channel) &&
