@@ -30,7 +30,7 @@ bool hmac_init()
   hmac_ctx = OPENSSL_zalloc(sizeof(*hmac_ctx));
   if (!hmac_ctx)
   {
-    log_printf("memory allocation failed for HMAC context");
+    log_printf("PANIC: memory allocation failed for HMAC context");
     ERR_print_errors_fp(stderr);
     return false;
   }
@@ -38,7 +38,7 @@ bool hmac_init()
   hmac_ctx->mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
   if (!hmac_ctx->mac)
   {
-    log_printf("failed to fetch HMAC implementation");
+    log_printf("PANIC: failed to fetch HMAC implementation");
     ERR_print_errors_fp(stderr);
     OPENSSL_free(hmac_ctx);
     hmac_ctx = NULL;
@@ -48,7 +48,7 @@ bool hmac_init()
   hmac_ctx->ctx = EVP_MAC_CTX_new(hmac_ctx->mac);
   if (!hmac_ctx->ctx)
   {
-    log_printf("failed to create HMAC context");
+    log_printf("PANIC: failed to create HMAC context");
     ERR_print_errors_fp(stderr);
     EVP_MAC_free(hmac_ctx->mac);
     OPENSSL_free(hmac_ctx);
@@ -62,7 +62,7 @@ bool hmac_init()
 
   if (EVP_MAC_init(hmac_ctx->ctx, hmac_secret, hmac_secretlen, params) != 1)
   {
-    log_printf("failed to initialize HMAC context");
+    log_printf("PANIC: failed to initialize HMAC context");
     ERR_print_errors_fp(stderr);
     EVP_MAC_CTX_free(hmac_ctx->ctx);
     EVP_MAC_free(hmac_ctx->mac);
@@ -90,21 +90,21 @@ bool hmac_sign(const char *data, size_t data_len, unsigned char *hmac_result, si
 {
   if (!hmac_ctx || !data || !hmac_result || !hmac_len)
   {
-    log_printf("invalid arguments to hmac_sign");
+    log_printf("PANIC: invalid arguments to hmac_sign");
     return false;
   }
 
   // Reinitialize with the original key (no params needed, digest already set)
   if (EVP_MAC_init(hmac_ctx->ctx, hmac_secret, hmac_secretlen, NULL) != 1)
   {
-    log_printf("failed to reinitialize HMAC context");
+    log_printf("PANIC: failed to reinitialize HMAC context");
     ERR_print_errors_fp(stderr);
     return false;
   }
 
   if (EVP_MAC_update(hmac_ctx->ctx, (const unsigned char *)data, data_len) != 1)
   {
-    log_printf("failed to update HMAC context with data");
+    log_printf("PANIC: failed to update HMAC context with data");
     ERR_print_errors_fp(stderr);
     return false;
   }
@@ -113,20 +113,20 @@ bool hmac_sign(const char *data, size_t data_len, unsigned char *hmac_result, si
   size_t req_len = 0;
   if (EVP_MAC_final(hmac_ctx->ctx, NULL, &req_len, 0) != 1)
   {
-    log_printf("failed to get HMAC length");
+    log_printf("PANIC: failed to get HMAC length");
     ERR_print_errors_fp(stderr);
     return false;
   }
 
   if (req_len > *hmac_len)
   {
-    log_printf("provided buffer too small for HMAC result");
+    log_printf("PANIC: provided buffer too small for HMAC result");
     return false;
   }
 
   if (EVP_MAC_final(hmac_ctx->ctx, hmac_result, &req_len, *hmac_len) != 1)
   {
-    log_printf("failed to finalize HMAC computation");
+    log_printf("PANIC: failed to finalize HMAC computation");
     ERR_print_errors_fp(stderr);
     return false;
   }

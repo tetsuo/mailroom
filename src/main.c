@@ -86,20 +86,20 @@ static size_t hex_to_bytes(unsigned char *b, size_t b_size, const char *hex)
 {
   if (!b || !hex)
   {
-    log_printf("invalid input");
+    log_printf("PANIC: invalid hex string");
     return 0;
   }
 
   size_t hex_len = strlen(hex);
   if (hex_len % 2 != 0)
   {
-    log_printf("hex string must have an even length");
+    log_printf("PANIC: hex string must have an even length");
     return 0;
   }
 
   if (b_size < hex_len / 2)
   {
-    log_printf("byte array is too small");
+    log_printf("PANIC: buffer too small");
     return 0;
   }
 
@@ -108,7 +108,7 @@ static size_t hex_to_bytes(unsigned char *b, size_t b_size, const char *hex)
   {
     if (sscanf(hex + i, "%2x", &byte) != 1)
     {
-      log_printf("invalid hex character");
+      log_printf("PANIC: invalid hex character");
       return 0;
     }
     b[i / 2] = (unsigned char)byte;
@@ -200,7 +200,7 @@ int main(void)
 
   if (!hmac_init())
   {
-    log_printf("failed to init HMAC");
+    log_printf("PANIC: failed to init HMAC");
     return EXIT_FAILURE;
   }
 
