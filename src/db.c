@@ -266,7 +266,7 @@ bool db_healthcheck(PGconn *conn)
 {
   if (!conn || PQstatus(conn) != CONNECTION_OK)
   {
-    log_printf("ERROR: healthcheck failed; connection is invalid: %s\n", PQerrorMessage(conn));
+    log_printf("ERROR: bad connection; %s\n", PQerrorMessage(conn));
     return false;
   }
 

@@ -20,11 +20,11 @@
 #include <sys/select.h>
 #endif
 
-#define ENV_BATCH_TIMEOUT_MS 5000
+#define ENV_BATCH_TIMEOUT 5000
 #define ENV_BATCH_LIMIT 10
 #define ENV_DB_CHANNEL_NAME "token_insert"
 #define ENV_DB_QUEUE_NAME "user_action_queue"
-#define ENV_DB_HEALTHCHECK_INTERVAL_MS 60000
+#define ENV_DB_HEALTHCHECK_INTERVAL 290000
 
 unsigned char hmac_secret[HMAC_SECRET_SIZE] = {0};
 size_t hmac_secretlen = 0;
@@ -181,22 +181,22 @@ int main(void)
   if (!queue_name)
   {
     queue_name = ENV_DB_QUEUE_NAME;
-    log_printf("DB_QUEUE_NAME not set (default=%s)", queue_name);
   }
 
-  int batch_limit = parse_env_int("BATCH_LIMIT", ENV_BATCH_LIMIT);
-  int timeout_ms = parse_env_int("BATCH_TIMEOUT", ENV_BATCH_TIMEOUT_MS);
-  int idle_max = parse_env_int("DB_HEALTHCHECK_INTERVAL_MS", ENV_DB_HEALTHCHECK_INTERVAL_MS);
+  int healthcheck_ms = parse_env_int("DB_HEALTHCHECK_INTERVAL", ENV_DB_HEALTHCHECK_INTERVAL);
+  int timeout_ms = parse_env_int("BATCH_TIMEOUT", ENV_BATCH_TIMEOUT);
 
-  if (idle_max < timeout_ms)
+  if (healthcheck_ms < timeout_ms)
   {
-    log_printf("DB_HEALTHCHECK_INTERVAL_MS must be greater than BATCH_TIMEOUT, or equal to it");
+    log_printf("DB_HEALTHCHECK_INTERVAL must be greater than BATCH_TIMEOUT, or equal to it");
     return EXIT_FAILURE;
   }
 
-  idle_max = idle_max / timeout_ms;
+  int batch_limit = parse_env_int("BATCH_LIMIT", ENV_BATCH_LIMIT);
 
-  log_printf("configured; channel=%s queue=%s limit=%d timeout=%dms", channel_name, queue_name, batch_limit, timeout_ms);
+  log_printf("configured with channel=%s queue=%s limit=%d timeout=%dms healthcheck-interval=%dms", channel_name, queue_name, batch_limit, timeout_ms, healthcheck_ms);
+
+  healthcheck_ms = healthcheck_ms / timeout_ms;
 
   if (!hmac_init())
   {
@@ -220,8 +220,9 @@ int main(void)
   long start = get_current_time_ms();
   long now, elapsed, remaining_ms;
 
+  long last_healthcheck = start;
+
   int ready = -1;
-  int idle = 0;
 
   while (running)
   {
@@ -254,7 +255,7 @@ int main(void)
 
       seen = 0;
       ready = 0;
-      idle = 0;
+      last_healthcheck = get_current_time_ms();
 
       continue;
     }
@@ -279,7 +280,7 @@ int main(void)
 
       seen = 0;
       ready = 0;
-      idle = 0;
+      last_healthcheck = get_current_time_ms();
     }
 
     // Process any pending notifications before select()
@@ -351,18 +352,16 @@ int main(void)
         continue;
       }
 
-      idle += 1;
-      if (idle >= idle_max)
+      if (now - last_healthcheck >= healthcheck_ms)
       {
         if (!db_healthcheck(conn))
         {
-          log_printf("WARN: healthcheck; connection lost; %s", PQerrorMessage(conn));
           ready = -1;
           continue;
         }
         else
         {
-          idle = 0;
+          last_healthcheck = start;
         }
       }
     }
