@@ -192,7 +192,7 @@ int main(void)
 
   int batch_limit = parse_env_int("BATCH_LIMIT", ENV_BATCH_LIMIT);
 
-  log_printf("configured with channel=%s queue=%s limit=%d timeout=%dms healthcheck-interval=%dms", channel_name, queue_name, batch_limit, timeout_ms, healthcheck_ms);
+  log_printf("configured; channel=%s queue=%s limit=%d timeout=%dms healthcheck-interval=%dms", channel_name, queue_name, batch_limit, timeout_ms, healthcheck_ms);
 
   if (!hmac_init())
   {
