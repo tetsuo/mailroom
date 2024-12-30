@@ -6,27 +6,35 @@ Mailroom is a lightweight system for managing user lifecycle emails, such as acc
 
 - **Event-Driven**: Processes database changes in real time without polling or relying on external queues.
 - **Batch Processing**: Collects emails into batches based on configurable size and time thresholds.
-- **Security**: Ensures secure authentication with HMAC-signed secrets, reducing reliance on database lookups.
+- **Security**: Uses HMAC-signed secrets to ensure secure authentication, minimizing database lookups.
 - **Resilient**: Automatically reconnects to the database and resumes processing after transient connection failures.
+
+## Quickstart
+
+1. Clone this repository.
+2. Set up PostgreSQL and apply the provided database migrations.
+3. Compile the `listener` by installing `openssl@3` and `libpq@5`, then running `make release`.
+4. (Optional) Build the `sender` using `cargo build --release`.
+5. Configure the required environment variables and start both components: `./listener | ./sender`.
 
 ## Components
 
 ### PostgreSQL
 
-PostgreSQL is configured to manage the **state-token relationship** and operate as a **single-consumer work queue**.
+PostgreSQL is initialized using provided database migrations to manage the state-token relationship and operate as a single-consumer work queue.
 
 - **Triggers**: Automatically generating actions (like inserting tokens) or sending notifications.
 - **Cursors (`jobs`)**: Tracking progress of processed actions.
 
 #### How Notifications Work?
 
-- Tokens are inserted into the `tokens` table with details like action type, unique secret, code.
-- A trigger sends a `NOTIFY` event for each new token.
-- The `listener` listens to this channel and processes token rows.
+- When a token is inserted into the `tokens` table, it includes details such as the action type, a unique secret, and an optional code.
+- A PostgreSQL trigger sends a `NOTIFY` event for each newly inserted token.
+- The `listener` subscribes to this channel and processes the corresponding rows.
 
 ### Listener
 
-The `listener` captures events from a notification channel, **counts** them, and **queries the database** when either a given row limit (based on the number of received notifications) is reached or a timeout elapses. It writes the results as **line-delimited** batches of data to stdout. Each line in the output contains up to the configured limit of rows, formatted as comma-separated values in the following order:
+The `listener` subscribes to a PostgreSQL notification channel, counting events and querying the database once either a row limit (based on received notifications) or a timeout is reached. Results are output as **line-delimited batches** to stdout, formatted as comma-separated values in the following order:
 
 ```
 action,email,username,secret,code
@@ -51,7 +59,7 @@ Here, the first line contains a batch of three actions, including both password 
 
 ### Sender
 
-The `sender` processes these lines, **groups destinations** by action type, and **delivers templated bulk emails** via AWS SES. Simply pipe two processes together, and watch the emails take flight:
+The `sender` processes batches from the `listener`, groups recipients by action type, and sends templated bulk emails through AWS SES.
 
 ```sh
 ./listener | ./sender
@@ -65,8 +73,8 @@ Both components are fully configured using environment variables. Here’s the l
 
 | Name                            | Default Value          | Description                                                                |
 | ------------------------------- | ---------------------- | -------------------------------------------------------------------------- |
-| `MAILROOM_DATABASE_URL`         | _None (required)_      | PostgreSQL connection string.                                              |
-| `MAILROOM_SECRET_KEY`           | _None (required)_      | 64-character hexadecimal string used as the secret key for HMAC.           |
+| `MAILROOM_DATABASE_URL`         | **(Required)**         | PostgreSQL connection string.                                              |
+| `MAILROOM_SECRET_KEY`           | **(Required)**         | 64-character hexadecimal string used as the secret key for HMAC.           |
 | `MAILROOM_CHANNEL_NAME`         | `token_insert`         | Name of the PostgreSQL NOTIFY channel to listen for notifications.         |
 | `MAILROOM_QUEUE_NAME`           | `user_action_queue`    | Name of the PostgreSQL queue or table for storing user actions.            |
 | `MAILROOM_HEALTHCHECK_INTERVAL` | `270000` (4.5 minutes) | Interval in milliseconds for health checks on the database connection.     |
@@ -113,7 +121,7 @@ printf "%.0sINSERT INTO accounts (email, login) VALUES ('user' || md5(random()::
 
 ### listener
 
-The `src` folder contains the `listener` code written in C. To compile it, ensure you have `openssl@3` and `libpq@5` installed on your system, then use the provided Makefile.
+To compile `listener`, ensure you have `openssl@3` and `libpq@5` installed on your system, then use the provided Makefile.
 
 - **Makefile Targets**
   - `release`: Compiles an optimized binary for production use. Default target.
@@ -143,12 +151,12 @@ Build image:
 docker build -t mailroom:dev .
 ```
 
-Run container:
+Run the container:
 
 ```bash
 docker run -it \
-  -e DATABASE_URL="dbname=example host=host.docker.internal port=5432 user=postgres" \
-  -e SECRET_KEY='deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef' \
+  -e MAILROOM_DATABASE_URL="dbname=example host=host.docker.internal port=5432 user=postgres" \
+  -e MAILROOM_SECRET_KEY='deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef' \
   --rm \
   --name mailroom \
   --memory=6m \
