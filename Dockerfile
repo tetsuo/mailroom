@@ -17,14 +17,26 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable --pr
 
 ENV PATH="/home/builder/.cargo/bin:${PATH}"
 
-COPY --chown=builder:builder src/main.c src/db.c src/hmac.c src/base64.c src/log.c src/config.h src/db.h src/hmac.h src/base64.h src/log.h /build/src/
-COPY --chown=builder:builder Makefile /build/
-
-RUN make release
-
 COPY --chown=builder:builder sender/Cargo.toml sender/Cargo.lock /build/sender/
 
 RUN (cd /build/sender && cargo fetch)
+
+COPY --chown=builder:builder \
+    listener/src/main.c \
+    listener/src/db.c \
+    listener/src/hmac.c \
+    listener/src/base64.c \
+    listener/src/log.c \
+    listener/src/config.h \
+    listener/src/db.h \
+    listener/src/hmac.h \
+    listener/src/base64.h \
+    listener/src/log.h \
+    /build/listener/src/
+
+COPY --chown=builder:builder listener/Makefile /build/listener/
+
+RUN (cd /build/listener && make release)
 
 COPY --chown=builder:builder sender/src/main.rs /build/sender/src/
 
@@ -43,7 +55,7 @@ RUN mkdir -p /home/runner/output && chown -R runner:runner /home/runner
 VOLUME /home/runner
 WORKDIR /home/runner
 
-COPY --from=builder /build/listener /home/runner/
+COPY --from=builder /build/listener/listener /home/runner/
 COPY --from=builder /build/sender/target/release/sender /home/runner/
 
 USER 666
