@@ -13,9 +13,9 @@ Mailroom is a lightweight system for managing user lifecycle emails, such as acc
 
 1. Clone this repository.
 2. Set up PostgreSQL and apply the provided database migrations.
-3. Compile the `listener` by installing `openssl@3` and `libpq@5`, then running `make release`.
+3. Compile the `collector` by installing `openssl@3` and `libpq@5`, then running `make release`.
 4. (Optional) Build the `sender` using `cargo build --release`.
-5. Configure the required environment variables and start both components: `./listener | ./sender`.
+5. Configure the required environment variables and start both components: `./collector | ./sender`.
 
 ## Components
 
@@ -30,11 +30,11 @@ PostgreSQL is initialized using provided database migrations to manage the state
 
 - When a token is inserted into the `tokens` table, it includes details such as the action type, a unique secret, and an optional code.
 - A PostgreSQL trigger sends a `NOTIFY` event for each newly inserted token.
-- The `listener` subscribes to this channel and processes the corresponding rows.
+- The `collector` subscribes to this channel and processes the corresponding rows.
 
-### Listener
+### Collector
 
-The `listener` subscribes to a PostgreSQL notification channel, counting events and querying the database once either a row limit (based on received notifications) or a timeout is reached. Results are output as **line-delimited batches** to stdout, formatted as comma-separated values in the following order:
+The `collector` subscribes to a PostgreSQL notification channel, tracks incoming events, and executes a query when either a row limit (based on the number of received notifications) or a timeout is reached. The results are output as **line-delimited batches** to stdout, formatted as comma-separated values in the following order:
 
 ```
 action,email,username,secret,code
@@ -59,17 +59,17 @@ Here, the first line contains a batch of three actions, including both password 
 
 ### Sender
 
-The `sender` processes batches from the `listener`, groups recipients by action type, and sends templated bulk emails through AWS SES.
+The `sender` processes batches from the `collector`, groups recipients by action type, and sends templated bulk emails through AWS SES.
 
 ```sh
-./listener | ./sender
+./collector | ./sender
 ```
 
 ## Environment Variables
 
 Both components are fully configured using environment variables. Here’s the list, their purposes, and default values:
 
-### listener
+### collector
 
 | Name                            | Default Value          | Description                                                                |
 | ------------------------------- | ---------------------- | -------------------------------------------------------------------------- |
@@ -119,9 +119,9 @@ printf "%.0sINSERT INTO accounts (email, login) VALUES ('user' || md5(random()::
 
 ## Building
 
-### listener
+### collector
 
-To compile `listener`, ensure you have `openssl@3` and `libpq@5` installed on your system, then use the provided Makefile.
+To compile `collector`, ensure you have `openssl@3` and `libpq@5` installed on your system, then use the provided Makefile.
 
 - **Makefile Targets**
   - `release`: Compiles an optimized binary for production use. Default target.
@@ -139,7 +139,7 @@ make clean && make debug && \
   (cd sender && cargo build) && \
   MAILROOM_DATABASE_URL="dbname=aegis" \
   MAILROOM_SECRET_KEY='deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef' \
-    ./listener | \
+    ./collector | \
     MAILROOM_DEBUG=true ./sender/target/debug/sender
 ```
 
