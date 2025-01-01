@@ -48,7 +48,7 @@ CREATE INDEX tokens_account_fkey ON tokens (account);
 CREATE INDEX tokens_id_expires_consumed_action_idx ON tokens (id, expires_at, consumed_at, action);
 
 CREATE TYPE job_type AS ENUM (
-    'user_action_queue'
+    'mailroom'
 );
 
 -- Job queue cursor table to track the last processed token
@@ -64,7 +64,7 @@ INSERT INTO
 jobs
     (last_seq, job_type)
 VALUES
-    (0, 'user_action_queue');
+    (0, 'mailroom');
 
 -- Triggers
 

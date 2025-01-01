@@ -76,7 +76,7 @@ Both components are fully configured using environment variables. Here’s the l
 | `MAILROOM_DATABASE_URL`         | **(Required)**         | PostgreSQL connection string.                                              |
 | `MAILROOM_SECRET_KEY`           | **(Required)**         | 64-character hexadecimal string used as the secret key for HMAC.           |
 | `MAILROOM_CHANNEL_NAME`         | `token_insert`         | Name of the PostgreSQL NOTIFY channel to listen for notifications.         |
-| `MAILROOM_QUEUE_NAME`           | `user_action_queue`    | Name of the PostgreSQL queue or table for storing user actions.            |
+| `MAILROOM_QUEUE_NAME`           | `mailroom`             | Name of the PostgreSQL queue or table for storing user actions.            |
 | `MAILROOM_HEALTHCHECK_INTERVAL` | `270000` (4.5 minutes) | Interval in milliseconds for health checks on the database connection.     |
 | `MAILROOM_BATCH_TIMEOUT`        | `5000` (5 seconds)     | Timeout in milliseconds to wait for accumulating a batch of notifications. |
 | `MAILROOM_BATCH_LIMIT`          | `10`                   | Maximum number of items to process in a single batch.                      |

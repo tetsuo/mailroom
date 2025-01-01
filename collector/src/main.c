@@ -23,7 +23,7 @@
 #define ENV_BATCH_TIMEOUT 5000
 #define ENV_BATCH_LIMIT 10
 #define ENV_DB_CHANNEL_NAME "token_insert"
-#define ENV_DB_QUEUE_NAME "user_action_queue"
+#define ENV_DB_QUEUE_NAME "mailroom"
 #define ENV_DB_HEALTHCHECK_INTERVAL 270000
 
 unsigned char hmac_secret[HMAC_SECRET_SIZE] = {0};
