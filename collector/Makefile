@@ -25,7 +25,7 @@ CFLAGS_DEBUG = -Wall -Wextra -pedantic -std=c99 -g -O0 -DDEBUG -fno-omit-frame-p
 
 SOURCES = src/main.c src/db.c src/hmac.c src/base64.c src/log.c
 OBJECTS = $(SOURCES:.c=.o)
-TARGET = listener
+TARGET = collector
 
 all: release
 

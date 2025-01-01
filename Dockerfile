@@ -22,21 +22,21 @@ COPY --chown=builder:builder sender/Cargo.toml sender/Cargo.lock /build/sender/
 RUN (cd /build/sender && cargo fetch)
 
 COPY --chown=builder:builder \
-    listener/src/main.c \
-    listener/src/db.c \
-    listener/src/hmac.c \
-    listener/src/base64.c \
-    listener/src/log.c \
-    listener/src/config.h \
-    listener/src/db.h \
-    listener/src/hmac.h \
-    listener/src/base64.h \
-    listener/src/log.h \
-    /build/listener/src/
+    collector/src/main.c \
+    collector/src/db.c \
+    collector/src/hmac.c \
+    collector/src/base64.c \
+    collector/src/log.c \
+    collector/src/config.h \
+    collector/src/db.h \
+    collector/src/hmac.h \
+    collector/src/base64.h \
+    collector/src/log.h \
+    /build/collector/src/
 
-COPY --chown=builder:builder listener/Makefile /build/listener/
+COPY --chown=builder:builder collector/Makefile /build/collector/
 
-RUN (cd /build/listener && make release)
+RUN (cd /build/collector && make release)
 
 COPY --chown=builder:builder sender/src/main.rs /build/sender/src/
 
@@ -55,9 +55,9 @@ RUN mkdir -p /home/runner/output && chown -R runner:runner /home/runner
 VOLUME /home/runner
 WORKDIR /home/runner
 
-COPY --from=builder /build/listener/listener /home/runner/
+COPY --from=builder /build/collector/collector /home/runner/
 COPY --from=builder /build/sender/target/release/sender /home/runner/
 
 USER 666
 
-CMD ["/bin/sh", "-c", "/home/runner/listener | /home/runner/sender"]
+CMD ["/bin/sh", "-c", "/home/runner/collector | /home/runner/sender"]
