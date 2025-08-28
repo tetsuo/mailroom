@@ -1,13 +1,13 @@
 # mailroom
 
-Mailroom is a lightweight system for managing user lifecycle emails, such as account activations and password recovery.
+mailroom demonstrates an event-driven architecture that uses PostgreSQL [triggers](https://www.postgresql.org/docs/current/sql-createtrigger.html) and [notifications](https://www.postgresql.org/docs/current/sql-notify.html) to detect account status changes and batch email notifications based on configurable size and time thresholds.
 
-## Features
+The system is composed of two components:
 
-- **Event-Driven**: Processes database changes in real time without polling or relying on external queues.
-- **Batch Processing**: Collects emails into batches based on configurable size and time thresholds.
-- **Security**: Uses HMAC-signed secrets to ensure secure authentication, minimizing database lookups.
-- **Resilient**: Automatically reconnects to the database and resumes processing after transient connection failures.
+* [collector](./collector) is a C program that uses libpq to listen for PostgreSQL notifications and produce batches of email payload data.
+* [sender](./sender) is a Rust service that consumes the collector's output and sends bulk emails via AWS SES.
+
+There's no external queue; the database itself also serves as a simple self-managed job queue. For details, see [SCHEMA.md](./SCHEMA.md).
 
 ## Quickstart
 
@@ -17,16 +17,22 @@ Mailroom is a lightweight system for managing user lifecycle emails, such as acc
 4. (Optional) Build the `sender` using `cargo build --release`.
 5. Configure the required environment variables and start both components: `./collector | ./sender`.
 
-## Components
+## How it works?
 
-### PostgreSQL
+Actors:
 
-PostgreSQL is initialized using provided database migrations to manage the state-token relationship and operate as a single-consumer work queue.
+- **User**: Responsible for creating and activating accounts.
+- **Admin**: Can suspend accounts.
 
-- **Triggers**: Automatically generating actions (like inserting tokens) or sending notifications.
-- **Cursors (`jobs`)**: Tracking progress of processed actions.
+Components include:
 
-#### How Notifications Work?
+- **Accounts**: A table for storing users and their lifecycle states.
+- **Tokens**: A table for managing activation and recovery tokens.
+- **Triggers**: Automate processes like status updates, notifications, and timestamp modifications.
+
+Here's the sequence diagram:
+
+![Workflows](./etc/postgres_sequence.svg)
 
 - When a token is inserted into the `tokens` table, it includes details such as the action type, a unique secret, and an optional code.
 - A PostgreSQL trigger sends a `NOTIFY` event for each newly inserted token.
@@ -34,7 +40,7 @@ PostgreSQL is initialized using provided database migrations to manage the state
 
 ### Collector
 
-The `collector` subscribes to a PostgreSQL notification channel, tracks incoming events, and executes a query when either a row limit (based on the number of received notifications) or a timeout is reached. The results are output as **line-delimited batches** to stdout, formatted as comma-separated values in the following order:
+The `collector` subscribes to a PostgreSQL notification channel, tracks incoming events, and executes a query when either a row limit (based on the number of received notifications) or a timeout is reached. The results are output as line-delimited batches to stdout, formatted as comma-separated values in the following order:
 
 ```
 action,email,username,secret,code
@@ -67,7 +73,7 @@ The `sender` processes batches from the `collector`, groups recipients by action
 
 ## Environment Variables
 
-Both components are fully configured using environment variables. Here’s the list, their purposes, and default values:
+Both components are fully configured using environment variables. Here's the list, their purposes, and default values:
 
 ### collector
 
